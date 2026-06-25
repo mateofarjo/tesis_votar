@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Voter {
+  id                   String                @id @default(cuid())
+  /// SHA-256 del DNI; nunca se persiste el DNI en claro.
+  dniHash              String                @unique @map("dni_hash") @db.VarChar(64)
+  /// SHA-256 de los vectores biometricos provistos por Veriff.
+  biometricHash        String                @unique @map("biometric_hash") @db.VarChar(64)
+  estado               Estado                @default(REGISTRADO)
+  votoEmitido          Boolean               @default(false) @map("voto_emitido")
+  /// Identificador externo opcional devuelto por Veriff.
+  veriffPersonId       String?               @unique @map("veriff_person_id")
+  verifiedAt           DateTime?             @map("verified_at")
+  votedAt              DateTime?             @map("voted_at")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  auditLogs            AuditLog[]
+  verificationAttempts VerificationAttempt[]
+  voteTokens           VoteToken[]
+
+  @@index([estado])
+  @@index([votoEmitido])
+  @@map("voters")
+}
+
+model VerificationAttempt {
+  id              String             @id @default(cuid())
+  voterId         String?            @map("voter_id")
+  type            VerificationType
+  status          VerificationStatus @default(PENDIENTE)
+  /// Session ID de Veriff para correlacionar webhook y flujo interno.
+  veriffSessionId String             @unique @map("veriff_session_id")
+  veriffAttemptId String?            @unique @map("veriff_attempt_id")
+  referenceId     String?            @map("reference_id")
+  dniHash         String?            @map("dni_hash") @db.VarChar(64)
+  biometricHash   String?            @map("biometric_hash") @db.VarChar(64)
+  biometricMatch  Boolean?           @map("biometric_match")
+  failureReason   String?            @map("failure_reason")
+  initiatedAt     DateTime           @default(now()) @map("initiated_at")
+  resolvedAt      DateTime?          @map("resolved_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+  voter           Voter?             @relation(fields: [voterId], references: [id])
+  voteTokens      VoteToken[]
+
+  @@index([voterId, type])
+  @@index([dniHash, type])
+  @@index([status, type])
+  @@map("verification_attempts")
+}
+
+model VoteToken {
+  id                    String               @id @default(cuid())
+  voterId               String               @map("voter_id")
+  verificationAttemptId String?              @map("verification_attempt_id")
+  /// SHA-256 del UUID de voto. Permite reconciliar el evento on-chain sin guardar el token en claro.
+  tokenHash             String               @unique @map("token_hash") @db.VarChar(64)
+  /// SHA-256 del token firmado devuelto al cliente. Evita almacenar la firma en claro y reduce correlacion.
+  signedTokenHash       String               @unique @map("signed_token_hash") @db.VarChar(64)
+  status                VoteTokenStatus      @default(EMITIDO)
+  expiresAt             DateTime             @map("expires_at")
+  usedAt                DateTime?            @map("used_at")
+  revokedAt             DateTime?            @map("revoked_at")
+  blockchainTxHash      String?              @unique @map("blockchain_tx_hash")
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  auditLogs             AuditLog[]
+  verificationAttempt   VerificationAttempt? @relation(fields: [verificationAttemptId], references: [id])
+  voter                 Voter                @relation(fields: [voterId], references: [id])
+
+  @@index([voterId, status])
+  @@index([expiresAt])
+  @@map("vote_tokens")
+}
+
+model AuditLog {
+  id            String      @id @default(cuid())
+  voterId       String?     @map("voter_id")
+  voteTokenId   String?     @map("vote_token_id")
+  actorType     ActorType   @map("actor_type")
+  action        AuditAction
+  sessionId     String?     @map("session_id")
+  /// Hash SHA-256 de IP para auditoria sin exponer la IP real.
+  ipHash        String?     @map("ip_hash") @db.VarChar(64)
+  /// Hash SHA-256 del user-agent para correlacion forense minima.
+  userAgentHash String?     @map("user_agent_hash") @db.VarChar(64)
+  resourceType  String?     @map("resource_type")
+  resourceId    String?     @map("resource_id")
+  metadata      Json?
+  createdAt     DateTime    @default(now()) @map("created_at")
+  voteToken     VoteToken?  @relation(fields: [voteTokenId], references: [id])
+  voter         Voter?      @relation(fields: [voterId], references: [id])
+
+  @@index([action, createdAt])
+  @@index([voterId, createdAt])
+  @@index([voteTokenId])
+  @@index([sessionId])
+  @@map("audit_logs")
+}
+
+enum Estado {
+  REGISTRADO
+  VERIFICADO
+  VOTO_EMITIDO
+}
+
+enum VerificationType {
+  REGISTRO
+  LIVENESS
+}
+
+enum VerificationStatus {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
+  EXPIRADO
+  ERROR
+}
+
+enum VoteTokenStatus {
+  EMITIDO
+  CONSUMIDO
+  REVOCADO
+  EXPIRADO
+}
+
+enum ActorType {
+  VOTER
+  AUTORIDAD
+  SISTEMA
+  WEBHOOK
+}
+
+enum AuditAction {
+  REGISTRO_INICIADO
+  REGISTRO_APROBADO
+  REGISTRO_RECHAZADO
+  LOGIN_OK
+  LOGIN_FALLIDO
+  BIOMETRIA_VERIFICADA
+  BIOMETRIA_RECHAZADA
+  TOKEN_GENERADO
+  TOKEN_CONSUMIDO
+  VOTO_ENVIADO
+  VOTO_CONFIRMADO
+  WEBHOOK_VERIFF_RECIBIDO
+  WEBHOOK_VERIFF_INVALIDO
+  ADMIN_LOGIN
+  URNA_ABIERTA
+  URNA_CERRADA
+}

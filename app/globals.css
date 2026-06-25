@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f4f1e8;
+  --foreground: #082227;
+  --card: rgba(255, 255, 255, 0.82);
+  --muted: #5a6d6a;
+  --line: rgba(8, 34, 39, 0.12);
+  --accent: #0e5f5a;
+  --accent-soft: #d9f4eb;
+  --warning: #d08a18;
+  --danger: #b4412f;
+  --navbar-h: 64px;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  color: var(--foreground);
+  background:
+    radial-gradient(circle at top left, rgba(14, 95, 90, 0.13), transparent 36%),
+    radial-gradient(circle at top right, rgba(208, 138, 24, 0.14), transparent 28%),
+    linear-gradient(180deg, #faf7ef 0%, #f4f1e8 48%, #ece7d9 100%);
+  font-family: var(--font-body), sans-serif;
+}
+
+::selection {
+  color: #ffffff;
+  background: rgba(14, 95, 90, 0.9);
+}
+
+@layer base {
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading), sans-serif;
+    letter-spacing: -0.03em;
+  }
+
+  /* Smooth transitions on interactive elements */
+  button, a {
+    transition-property: color, background-color, border-color, transform, box-shadow, opacity;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+}
+
+@layer components {
+
+  /* ─── Layout ─── */
+  .page-shell {
+    @apply relative mx-auto min-h-[calc(100vh-var(--navbar-h))] w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8;
+  }
+
+  /* ─── Glass cards ─── */
+  .glass-panel {
+    @apply rounded-[28px] border border-white/60 bg-white/70 shadow-panel backdrop-blur-md;
+  }
+
+  .glass-card {
+    @apply rounded-[24px] border border-white/60 bg-white/80 shadow-card backdrop-blur-sm transition hover:shadow-card-hover;
+  }
+
+  /* ─── Eyebrow tag ─── */
+  .eyebrow {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-brand-line/90 bg-brand-mint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-brand-teal;
+  }
+
+  /* ─── Form fields ─── */
+  .field-label {
+    @apply text-sm font-medium text-brand-ink;
+  }
+
+  .field-input {
+    @apply w-full rounded-2xl border border-brand-line bg-white/90 px-4 py-3 text-sm text-brand-ink outline-none transition
+    focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20
+    placeholder:text-brand-ink/30;
+  }
+
+  .field-input-icon {
+    @apply pl-10;
+  }
+
+  /* ─── Buttons ─── */
+  .cta-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-brand-ink px-5 py-2.5 text-sm font-semibold text-white shadow-sm
+    transition hover:-translate-y-px hover:bg-brand-teal hover:shadow-md
+    active:translate-y-0 active:shadow-sm
+    disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:bg-brand-ink;
+  }
+
+  .secondary-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-brand-line bg-white/80 px-5 py-2.5 text-sm font-semibold text-brand-ink shadow-sm
+    transition hover:-translate-y-px hover:border-brand-teal hover:text-brand-teal hover:shadow-md
+    active:translate-y-0
+    disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0;
+  }
+
+  .danger-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-semibold text-red-700
+    transition hover:-translate-y-px hover:bg-red-100 hover:shadow-sm
+    disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* ─── Status chips ─── */
+  .status-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-brand-line/80 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-brand-ink;
+  }
+
+  .status-chip-success {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700;
+  }
+
+  .status-chip-warning {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700;
+  }
+
+  .status-chip-danger {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-red-700;
+  }
+
+  /* ─── Live badge ─── */
+  .live-badge {
+    @apply inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700;
+  }
+
+  /* ─── Metric cards ─── */
+  .metric-card {
+    @apply glass-panel rounded-[24px] p-5;
+  }
+
+  /* ─── Section title ─── */
+  .section-title {
+    @apply text-2xl font-semibold text-brand-ink sm:text-3xl;
+  }
+
+  /* ─── Step badges ─── */
+  .step-dot {
+    @apply flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-teal text-sm font-bold text-white shadow-sm;
+  }
+  .step-dot-inactive {
+    @apply flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border-2 border-brand-line bg-white text-sm font-semibold text-brand-ink/40;
+  }
+  .step-dot-done {
+    @apply flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm;
+  }
+
+  /* ─── Loading skeleton ─── */
+  .skeleton {
+    @apply animate-shimmer rounded-2xl bg-gradient-to-r from-brand-line/30 via-white/70 to-brand-line/30 bg-[length:200%_100%];
+  }
+
+  /* ─── Spinner ─── */
+  .spinner {
+    @apply h-5 w-5 animate-spin-slow rounded-full border-2 border-brand-line border-t-brand-teal;
+  }
+  .spinner-sm {
+    @apply h-4 w-4 animate-spin-slow rounded-full border-2 border-white/40 border-t-white;
+  }
+
+  /* ─── Info row (dl items) ─── */
+  .info-row {
+    @apply flex items-center justify-between gap-4 rounded-2xl border border-brand-line/60 bg-white/70 px-4 py-3;
+  }
+
+  /* ─── Alert boxes ─── */
+  .alert-error {
+    @apply flex items-start gap-3 rounded-3xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700;
+  }
+  .alert-success {
+    @apply flex items-start gap-3 rounded-3xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800;
+  }
+  .alert-info {
+    @apply flex items-start gap-3 rounded-3xl border border-brand-line/60 bg-brand-mint/60 px-4 py-3 text-sm text-brand-teal;
+  }
+}

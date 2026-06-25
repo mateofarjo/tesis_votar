@@ -1,0 +1,20 @@
+{
+  "network": "hardhat",
+  "contractName": "VotacionContract",
+  "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "chainId": 31337,
+  "transactionHash": "0x93e9aaa22ed1590e7c2e3044d9f1078752f05464320e74199bef458a4527d98c",
+  "blockNumber": 1,
+  "deployedAt": "2026-05-22T14:24:40.350Z",
+  "candidates": [
+    "Lista A",
+    "Lista B",
+    "Blanco"
+  ],
+  "rsaPublicKey": {
+    "fingerprint": "d20e4117372ee20f09333aa74f28fbc4476961e48fe78a91f60f6927cd4d5a15",
+    "modulusHex": "0xbc561155fc031ea414a47ac84c88cfbd7b2f2b1d1b37f97aaca9030018da3fac0288aa15841bbc3ed40771113ca49e32ff6d4ee1a708dd58f70d10a55041b12aad0069e76362fbd979383eacdcdd9b8bccd4ded53e09da11659aa1487ee445478c7a97fa31bf982d8e330a1b1ac5e1aed3ec486e3f6ab79b6518a30fcdcae3ad2c6e51b53b86d8b4785607985869174d67314f80d9deba0d490b1fe24ea9f0a316ff695653ce4906855139cba652da203ba387828741ca3df96c2a49796235b8929135918cbe0f6728046e142c8caf06c2fda7467667e853fd9d3ffd0583f9e3f0f96ec8246a5ca3d1e989862023de068c492926e40b96f7fcc1a0fd168d38c7",
+    "exponentHex": "0x010001"
+  }
+}

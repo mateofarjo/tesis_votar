@@ -1,0 +1,20 @@
+{
+  "network": "sepolia",
+  "contractName": "VotacionContract",
+  "contractAddress": "0x54ed66D4f09EA7De301161031a9a5F7A5D1C0261",
+  "deployer": "0x84B6a0057a0Ee9A0A5eC6430e66CE813a883120B",
+  "chainId": 11155111,
+  "transactionHash": "0x93ddb2e02b4325094c8f660d446f31697672b2848c828473c02c5920201f9ce7",
+  "blockNumber": 11137345,
+  "deployedAt": "2026-06-25T14:35:58.374Z",
+  "candidates": [
+    "Lista A",
+    "Lista B",
+    "Lista C"
+  ],
+  "rsaPublicKey": {
+    "fingerprint": "75bf826c4ee8c4f9f1b518c793971adc9b963397229cac793c0a19eabddbad6b",
+    "modulusHex": "0x8388f8827fa9dbb4594903e028cc8aabe0a121ca3cf36e3559af560b35d78d9212c1a3adcf5b1b65daa69be3d2f4e9b15302d7687b30fa87cd433ee67d0d77951422871cf7394da19451a4360c537abc8b8822847abc61dd90c0a1a250788a12ba52e7cf76e37ad9b27bf4c71b86dd6e29eaab9fd5b0253255525dea661d14321563c9007f4f1156df45fae79dbd0ef98262ce116594e123c57dec563215b8cf4f55eccdf1a1025b46f9533c7894807bda582fb897a1c886a48b57e195c60fa5396b14d754c1951c21e5d43f37288fca7bfe4e21407b8b47d5a42beb34504a7d81e5189e3e8deb8dea3852f5c6f564b4f8a8eb8216079db723982ba9b97abdaf",
+    "exponentHex": "0x010001"
+  }
+}

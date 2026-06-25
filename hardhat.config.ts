@@ -1,5 +1,7 @@
 import "@nomicfoundation/hardhat-toolbox";
-import "dotenv/config";
+import * as dotenv from "dotenv";
+dotenv.config();
+dotenv.config({ path: ".env.local", override: true });
 import { HardhatUserConfig } from "hardhat/config";
 
 const authorityPrivateKey = process.env.PRIVATE_KEY_AUTORIDAD;

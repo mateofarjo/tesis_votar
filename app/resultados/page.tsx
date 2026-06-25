@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Trophy
 } from "lucide-react";
+import { AnimatedNumber } from "../components/ui/animated-number";
 
 type ResultadoCandidato = { id: number; nombre: string; votos: number };
 type ResultadosResponse = {
@@ -121,14 +122,14 @@ export default function ResultadosPage() {
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-teal">Total votos</p>
               {isLoading
                 ? <div className="skeleton mt-3 h-10 w-24" />
-                : <p className="mt-3 text-4xl font-semibold text-brand-ink">{totalVotes}</p>
+                : <AnimatedNumber value={totalVotes} className="mt-3 text-4xl font-semibold text-brand-ink" />
               }
             </div>
             <div className="metric-card">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-teal">Candidatos</p>
               {isLoading
                 ? <div className="skeleton mt-3 h-10 w-16" />
-                : <p className="mt-3 text-4xl font-semibold text-brand-ink">{data?.candidatos.length ?? 0}</p>
+                : <AnimatedNumber value={data?.candidatos.length ?? 0} className="mt-3 text-4xl font-semibold text-brand-ink" />
               }
             </div>
             <div className="metric-card">
@@ -206,7 +207,7 @@ export default function ResultadosPage() {
                         <h3 className="mt-1.5 text-lg font-semibold text-brand-ink">{candidate.nombre}</h3>
                       </div>
                       <div className="text-right">
-                        <p className="text-3xl font-bold text-brand-ink">{candidate.votos}</p>
+                        <AnimatedNumber value={candidate.votos} className="text-3xl font-bold text-brand-ink" />
                         <p className="text-sm text-brand-ink/55">{percentage.toFixed(1)}%</p>
                       </div>
                     </div>

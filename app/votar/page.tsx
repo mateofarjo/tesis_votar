@@ -18,6 +18,8 @@ import {
   Scan,
   Send
 } from "lucide-react";
+import { ShimmerButton } from "../components/ui/shimmer-button";
+import { SpotlightCard } from "../components/ui/spotlight-card";
 
 type ResultadoCandidato = { id: number; nombre: string; votos: number };
 type ResultadosResponse = {
@@ -344,8 +346,7 @@ export default function VotarPage() {
                     <h2 className="mt-1 text-xl font-semibold text-brand-ink">Verificación biométrica</h2>
                   </div>
                   {!step1Done && (
-                    <button
-                      className="cta-button"
+                    <ShimmerButton
                       disabled={isCreatingAttempt || !urnaAbierta || Boolean(voteReceipt)}
                       onClick={() => void beginBiometricVerification()}
                       type="button"
@@ -355,7 +356,7 @@ export default function VotarPage() {
                       ) : (
                         <><Fingerprint size={15} /> Iniciar liveness</>
                       )}
-                    </button>
+                    </ShimmerButton>
                   )}
                   {step1Done && <span className="status-chip-success"><CheckCircle2 size={12} /> Completado</span>}
                 </div>
@@ -407,43 +408,43 @@ export default function VotarPage() {
                     const isSelected = selectedCandidateId === candidate.id;
                     const isDisabled = !voteToken || !urnaAbierta || Boolean(voteReceipt);
                     return (
-                      <button
-                        key={candidate.id}
-                        className={`group w-full rounded-[22px] border p-5 text-left transition ${
-                          isSelected
-                            ? "border-brand-teal bg-brand-mint/70 ring-2 ring-brand-teal/20"
-                            : "border-brand-line/60 bg-white/80 hover:border-brand-teal/50 hover:bg-brand-mint/30"
-                        } ${isDisabled ? "cursor-not-allowed opacity-55" : "hover:-translate-y-px hover:shadow-card"}`}
-                        disabled={isDisabled}
-                        onClick={() => setSelectedCandidateId(candidate.id)}
-                        type="button"
-                      >
-                        <div className="flex items-center justify-between gap-4">
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-teal">
-                              Opción {candidate.id}
-                            </p>
-                            <h3 className="mt-1.5 text-lg font-semibold text-brand-ink">{candidate.nombre}</h3>
-                            <p className="mt-1 text-sm text-brand-ink/55">
-                              {candidate.votos} votos registrados
-                            </p>
-                          </div>
-                          <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 transition ${
+                      <SpotlightCard key={candidate.id} className="w-full">
+                        <button
+                          className={`group w-full rounded-[22px] border p-5 text-left transition ${
                             isSelected
-                              ? "border-brand-teal bg-brand-teal text-white"
-                              : "border-brand-line/60 bg-white"
-                          }`}>
-                            {isSelected && <CheckCircle2 size={13} />}
+                              ? "border-brand-teal bg-brand-mint/70 ring-2 ring-brand-teal/20"
+                              : "border-brand-line/60 bg-white/80 hover:border-brand-teal/50 hover:bg-brand-mint/30"
+                          } ${isDisabled ? "cursor-not-allowed opacity-55" : "hover:-translate-y-px hover:shadow-card"}`}
+                          disabled={isDisabled}
+                          onClick={() => setSelectedCandidateId(candidate.id)}
+                          type="button"
+                        >
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-teal">
+                                Opción {candidate.id}
+                              </p>
+                              <h3 className="mt-1.5 text-lg font-semibold text-brand-ink">{candidate.nombre}</h3>
+                              <p className="mt-1 text-sm text-brand-ink/55">
+                                {candidate.votos} votos registrados
+                              </p>
+                            </div>
+                            <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 transition ${
+                              isSelected
+                                ? "border-brand-teal bg-brand-teal text-white"
+                                : "border-brand-line/60 bg-white"
+                            }`}>
+                              {isSelected && <CheckCircle2 size={13} />}
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                      </SpotlightCard>
                     );
                   })}
                 </div>
 
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                  <button
-                    className="cta-button"
+                  <ShimmerButton
                     disabled={!voteToken || selectedCandidateId === null || isSubmittingVote || !urnaAbierta || Boolean(voteReceipt)}
                     onClick={() => void submitVote()}
                     type="button"
@@ -453,7 +454,7 @@ export default function VotarPage() {
                     ) : (
                       <><Send size={15} /> Emitir voto</>
                     )}
-                  </button>
+                  </ShimmerButton>
                   <Link className="secondary-button" href="/resultados">
                     <BarChart3 size={15} />
                     Ver escrutinio

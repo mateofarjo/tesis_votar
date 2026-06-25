@@ -68,7 +68,7 @@ export async function GET(request: Request) {
       fechaApertura: serializeUnixTimestamp(fechas.fechaApertura),
       fechaCierre: serializeUnixTimestamp(fechas.fechaCierre),
       totalVotos,
-      voters: voters.map((voter) => ({
+      voters: voters.map((voter: typeof voters[number]) => ({
         createdAt: voter.createdAt.toISOString(),
         estado: voter.estado,
         id: voter.id,

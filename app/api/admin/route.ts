@@ -82,7 +82,7 @@ async function buildAdminSnapshot() {
     },
     totalVotos,
     updatedAt: new Date().toISOString(),
-    voters: voters.map((voter) => ({
+    voters: voters.map((voter: typeof voters[number]) => ({
       createdAt: voter.createdAt.toISOString(),
       estado: voter.estado,
       id: voter.id,

@@ -5,6 +5,7 @@ import { createAuditLog } from "../../../lib/audit";
 import {
   issueBlindSignedVoteToken
 } from "../../../lib/blindSignature";
+import { Prisma } from "@prisma/client";
 import prisma from "../../../lib/prisma";
 import { getClientIp, getUserAgent, sha256Hex } from "../../../lib/request";
 import { consumeRateLimit } from "../../../lib/rateLimit";
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
   const tokenHash = issuedToken.tokenDigestHex.replace(/^0x/, "").toLowerCase();
   const signedTokenHash = sha256Hex(issuedToken.encodedTokenFirmado);
 
-  const voteToken = await prisma.$transaction(async (tx) => {
+  const voteToken = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.voteToken.updateMany({
       data: {
         revokedAt: new Date(),

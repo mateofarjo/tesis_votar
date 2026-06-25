@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type {
   Estado,
   VerificationAttempt,
@@ -99,7 +100,7 @@ async function processRegistrationApproval(
   const biometricHash = hashBiometricVector(biometricSource);
   const resolvedAt = new Date();
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const existingByDni = await tx.voter.findUnique({
       where: {
         dniHash: attempt.dniHash!

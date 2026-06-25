@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { createAuditLog } from "../../../lib/audit";
 import { hashDni } from "../../../lib/biometricHash";
+import { Prisma } from "@prisma/client";
 import prisma from "../../../lib/prisma";
 import { getClientIp, getUserAgent, normalizeString } from "../../../lib/request";
 import { consumeRateLimit } from "../../../lib/rateLimit";
@@ -108,7 +109,7 @@ export async function POST(request: Request) {
     const biometricHash = sandboxBiometricHash(dniHash);
     const resolvedAt = new Date();
 
-    const { attempt, voter } = await prisma.$transaction(async (tx) => {
+    const { attempt, voter } = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const newVoter = await tx.voter.create({
         data: {
           biometricHash,

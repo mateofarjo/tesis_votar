@@ -7,6 +7,7 @@ import {
   emitirVotoEnContrato,
   getContractAddress
 } from "../../../lib/ethers";
+import { Prisma } from "@prisma/client";
 import prisma from "../../../lib/prisma";
 import { getClientIp, getUserAgent, sha256Hex } from "../../../lib/request";
 import { consumeRateLimit } from "../../../lib/rateLimit";
@@ -163,7 +164,7 @@ export async function POST(request: Request) {
 
     const usedAt = new Date();
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.voteToken.update({
         data: {
           blockchainTxHash: receipt.hash,

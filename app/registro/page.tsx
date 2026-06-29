@@ -27,6 +27,7 @@ type RegistroFormState = {
 
 type RegistroInitResponse = {
   attemptId: string;
+  sandbox?: boolean;
   status: string;
   veriffSessionId: string;
   veriffSessionToken: string | null;
@@ -207,12 +208,17 @@ export default function RegistroPage() {
       });
       const payload = (await res.json()) as RegistroInitResponse & { error?: string };
       if (!res.ok) throw new Error(payload.error ?? "No se pudo iniciar el registro");
-      if (!payload.veriffUrl) throw new Error("Veriff no devolvió la URL de la sesión");
+      if (!payload.sandbox && !payload.veriffUrl) throw new Error("Veriff no devolvió la URL de la sesión");
 
       setAttempt(payload);
-      setNotice("Sesión creada. Completá la captura en la ventana segura de Veriff.");
-      beginPolling(payload.attemptId, payload.veriffSessionId);
-      await openVeriffFrame(payload.veriffUrl);
+      if (payload.sandbox) {
+        setNotice("Modo demo: identidad aprobada automáticamente. Tu cuenta ya está activa.");
+        beginPolling(payload.attemptId, payload.veriffSessionId);
+      } else {
+        setNotice("Sesión creada. Completá la captura en la ventana segura de Veriff.");
+        beginPolling(payload.attemptId, payload.veriffSessionId);
+        await openVeriffFrame(payload.veriffUrl!);
+      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "No se pudo iniciar el registro");
       setNotice("Corregí los datos o reintentá en unos segundos.");

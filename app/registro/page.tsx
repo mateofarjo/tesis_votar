@@ -127,7 +127,6 @@ export default function RegistroPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>("Completá tus datos y preparate para la captura.");
-  const [veriffEvent, setVeriffEvent] = useState<string>("Sin iniciar");
   const [attempt, setAttempt] = useState<RegistroInitResponse | null>(null);
   const [attemptStatus, setAttemptStatus] = useState<RegistroStatusResponse | null>(null);
   const pollingRef = useRef<number | null>(null);
@@ -148,7 +147,6 @@ export default function RegistroPage() {
     frameRef.current = createVeriffFrame({
       lang: "es",
       onEvent(message) {
-        setVeriffEvent(message);
         if (message === MESSAGES.STARTED) setNotice("Veriff inició la captura de documento y biometría.");
         if (message === MESSAGES.SUBMITTED || message === MESSAGES.FINISHED)
           setNotice("Veriff recibió la evidencia. Esperamos la decisión final.");
@@ -213,7 +211,6 @@ export default function RegistroPage() {
 
       setAttempt(payload);
       setNotice("Sesión creada. Completá la captura en la ventana segura de Veriff.");
-      setVeriffEvent("STARTED");
       beginPolling(payload.attemptId, payload.veriffSessionId);
       await openVeriffFrame(payload.veriffUrl);
     } catch (error) {
@@ -393,21 +390,6 @@ export default function RegistroPage() {
               </div>
             )}
 
-            {/* Debug info */}
-            <dl className="mt-5 grid gap-2 text-sm text-brand-ink/72">
-              <div className="info-row">
-                <dt className="text-xs font-medium text-brand-ink/50">SDK Veriff</dt>
-                <dd className="text-xs font-mono">{veriffEvent}</dd>
-              </div>
-              <div className="info-row">
-                <dt className="text-xs font-medium text-brand-ink/50">Intento local</dt>
-                <dd className="max-w-[10rem] truncate text-xs font-mono">{attempt?.attemptId ?? "—"}</dd>
-              </div>
-              <div className="info-row">
-                <dt className="text-xs font-medium text-brand-ink/50">Sesión Veriff</dt>
-                <dd className="max-w-[10rem] truncate text-xs font-mono">{attempt?.veriffSessionId ?? "—"}</dd>
-              </div>
-            </dl>
           </section>
 
           {/* Próximos pasos */}

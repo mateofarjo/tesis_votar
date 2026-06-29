@@ -32,3 +32,5 @@ nextjs-new.log
 # Misc
 .DS_Store
 Thumbs.db
+
+.vercel

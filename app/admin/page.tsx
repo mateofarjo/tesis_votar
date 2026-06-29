@@ -51,6 +51,7 @@ type AdminActionReceipt = {
 };
 
 const REFRESH_INTERVAL_MS = 8_000;
+const PAGE_SIZE = 20;
 
 function formatDateTime(value: string | null) {
   if (!value) return "Sin dato";
@@ -82,6 +83,7 @@ export default function AdminPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionReceipt, setActionReceipt] = useState<AdminActionReceipt | null>(null);
   const [lastFetch, setLastFetch] = useState<Date | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     if (status === "unauthenticated") { router.replace("/login"); return; }
@@ -169,6 +171,9 @@ export default function AdminPage() {
   }
 
   const registrados = snapshot?.padron.registrados ?? snapshot?.padron.registradas ?? 0;
+  const allVoters = snapshot?.voters ?? [];
+  const totalPages = Math.max(1, Math.ceil(allVoters.length / PAGE_SIZE));
+  const pagedVoters = allVoters.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <main className="page-shell">
@@ -347,7 +352,7 @@ export default function AdminPage() {
                 <h2 className="text-lg font-semibold text-brand-ink">Padrón saneado</h2>
               </div>
               <span className="rounded-full border border-brand-line/60 bg-white/70 px-3 py-1 text-xs font-semibold text-brand-ink/60">
-                {snapshot?.voters.length ?? 0} registros
+                {allVoters.length} registros
               </span>
             </div>
 
@@ -356,41 +361,74 @@ export default function AdminPage() {
                 {[1, 2, 3, 4].map((i) => <div key={i} className="skeleton h-12 w-full" />)}
               </div>
             ) : (
-              <div className="mt-5 overflow-hidden rounded-[20px] border border-brand-line/60">
-                <div className="max-h-[44rem] overflow-auto">
-                  <table className="min-w-full border-collapse text-left text-sm">
-                    <thead className="sticky top-0 bg-brand-ink">
-                      <tr>
-                        {["ID", "Estado", "Alta", "Verificado", "Votado"].map((h) => (
-                          <th key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-white/80">
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(snapshot?.voters ?? []).map((voter, i) => (
-                        <tr
-                          key={voter.id}
-                          className={`border-t border-brand-line/40 transition hover:bg-brand-mint/30 ${
-                            i % 2 === 0 ? "bg-white/80" : "bg-white/50"
-                          }`}
-                        >
-                          <td className="px-4 py-3 font-mono text-[11px] text-brand-ink/60">
-                            {voter.id.slice(0, 8)}…
-                          </td>
-                          <td className="px-4 py-3">
-                            <VoterBadge estado={voter.estado} />
-                          </td>
-                          <td className="px-4 py-3 text-xs text-brand-ink/65">{formatDateTime(voter.createdAt)}</td>
-                          <td className="px-4 py-3 text-xs text-brand-ink/65">{formatDateTime(voter.verifiedAt)}</td>
-                          <td className="px-4 py-3 text-xs text-brand-ink/65">{formatDateTime(voter.votedAt)}</td>
+              <>
+                <div className="mt-5 overflow-hidden rounded-[20px] border border-brand-line/60">
+                  <div className="overflow-auto">
+                    <table className="min-w-full border-collapse text-left text-sm">
+                      <thead className="sticky top-0 bg-brand-ink">
+                        <tr>
+                          {["ID", "Estado", "Alta", "Verificado", "Votado"].map((h) => (
+                            <th key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-white/80">
+                              {h}
+                            </th>
+                          ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {pagedVoters.map((voter, i) => (
+                          <tr
+                            key={voter.id}
+                            className={`border-t border-brand-line/40 transition hover:bg-brand-mint/30 ${
+                              i % 2 === 0 ? "bg-white/80" : "bg-white/50"
+                            }`}
+                          >
+                            <td className="px-4 py-3 font-mono text-[11px] text-brand-ink/60">
+                              {voter.id.slice(0, 8)}…
+                            </td>
+                            <td className="px-4 py-3">
+                              <VoterBadge estado={voter.estado} />
+                            </td>
+                            <td className="px-4 py-3 text-xs text-brand-ink/65">{formatDateTime(voter.createdAt)}</td>
+                            <td className="px-4 py-3 text-xs text-brand-ink/65">{formatDateTime(voter.verifiedAt)}</td>
+                            <td className="px-4 py-3 text-xs text-brand-ink/65">{formatDateTime(voter.votedAt)}</td>
+                          </tr>
+                        ))}
+                        {pagedVoters.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-8 text-center text-sm text-brand-ink/40">
+                              No hay votantes registrados.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+
+                {totalPages > 1 && (
+                  <div className="mt-4 flex items-center justify-between gap-4">
+                    <button
+                      className="secondary-button py-1.5 text-xs"
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage((p) => p - 1)}
+                      type="button"
+                    >
+                      ← Anterior
+                    </button>
+                    <span className="text-xs text-brand-ink/55">
+                      Página {currentPage} de {totalPages}
+                    </span>
+                    <button
+                      className="secondary-button py-1.5 text-xs"
+                      disabled={currentPage === totalPages}
+                      onClick={() => setCurrentPage((p) => p + 1)}
+                      type="button"
+                    >
+                      Siguiente →
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </section>
         </div>

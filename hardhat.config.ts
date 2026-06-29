@@ -30,6 +30,9 @@ const config: HardhatUserConfig = {
       sepolia: process.env.ETHERSCAN_API_KEY || ""
     }
   },
+  sourcify: {
+    enabled: true
+  },
   mocha: {
     timeout: 60000
   }

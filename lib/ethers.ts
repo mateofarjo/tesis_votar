@@ -40,9 +40,8 @@ export type EmitirVotoInput = {
 
 const ARTIFACT_PATH = path.join(
   process.cwd(),
-  "artifacts",
-  "contracts",
-  "VotacionContract.sol",
+  "lib",
+  "abi",
   "VotacionContract.json"
 );
 

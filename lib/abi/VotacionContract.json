@@ -1,0 +1,366 @@
+﻿{
+    "abi":  [
+                {
+                    "inputs":  [
+                                   {
+                                       "internalType":  "string[]",
+                                       "name":  "nombresCandidatos",
+                                       "type":  "string[]"
+                                   },
+                                   {
+                                       "internalType":  "bytes",
+                                       "name":  "pubKey",
+                                       "type":  "bytes"
+                                   }
+                               ],
+                    "stateMutability":  "nonpayable",
+                    "type":  "constructor"
+                },
+                {
+                    "inputs":  [
+                                   {
+                                       "internalType":  "address",
+                                       "name":  "owner",
+                                       "type":  "address"
+                                   }
+                               ],
+                    "name":  "OwnableInvalidOwner",
+                    "type":  "error"
+                },
+                {
+                    "inputs":  [
+                                   {
+                                       "internalType":  "address",
+                                       "name":  "account",
+                                       "type":  "address"
+                                   }
+                               ],
+                    "name":  "OwnableUnauthorizedAccount",
+                    "type":  "error"
+                },
+                {
+                    "inputs":  [
+
+                               ],
+                    "name":  "ReentrancyGuardReentrantCall",
+                    "type":  "error"
+                },
+                {
+                    "anonymous":  false,
+                    "inputs":  [
+                                   {
+                                       "indexed":  true,
+                                       "internalType":  "address",
+                                       "name":  "previousOwner",
+                                       "type":  "address"
+                                   },
+                                   {
+                                       "indexed":  true,
+                                       "internalType":  "address",
+                                       "name":  "newOwner",
+                                       "type":  "address"
+                                   }
+                               ],
+                    "name":  "OwnershipTransferred",
+                    "type":  "event"
+                },
+                {
+                    "anonymous":  false,
+                    "inputs":  [
+                                   {
+                                       "indexed":  false,
+                                       "internalType":  "uint256",
+                                       "name":  "timestamp",
+                                       "type":  "uint256"
+                                   }
+                               ],
+                    "name":  "UrnaAbierta",
+                    "type":  "event"
+                },
+                {
+                    "anonymous":  false,
+                    "inputs":  [
+                                   {
+                                       "indexed":  false,
+                                       "internalType":  "uint256",
+                                       "name":  "timestamp",
+                                       "type":  "uint256"
+                                   }
+                               ],
+                    "name":  "UrnaCerrada",
+                    "type":  "event"
+                },
+                {
+                    "anonymous":  false,
+                    "inputs":  [
+                                   {
+                                       "indexed":  true,
+                                       "internalType":  "bytes32",
+                                       "name":  "tokenHash",
+                                       "type":  "bytes32"
+                                   },
+                                   {
+                                       "indexed":  false,
+                                       "internalType":  "uint8",
+                                       "name":  "candidatoId",
+                                       "type":  "uint8"
+                                   }
+                               ],
+                    "name":  "VotoEmitido",
+                    "type":  "event"
+                },
+                {
+                    "inputs":  [
+
+                               ],
+                    "name":  "abrirUrna",
+                    "outputs":  [
+
+                                ],
+                    "stateMutability":  "nonpayable",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+
+                               ],
+                    "name":  "autoridad",
+                    "outputs":  [
+                                    {
+                                        "internalType":  "address",
+                                        "name":  "",
+                                        "type":  "address"
+                                    }
+                                ],
+                    "stateMutability":  "view",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+                                   {
+                                       "internalType":  "uint256",
+                                       "name":  "",
+                                       "type":  "uint256"
+                                   }
+                               ],
+                    "name":  "candidatos",
+                    "outputs":  [
+                                    {
+                                        "internalType":  "uint8",
+                                        "name":  "id",
+                                        "type":  "uint8"
+                                    },
+                                    {
+                                        "internalType":  "string",
+                                        "name":  "nombre",
+                                        "type":  "string"
+                                    },
+                                    {
+                                        "internalType":  "uint256",
+                                        "name":  "votos",
+                                        "type":  "uint256"
+                                    }
+                                ],
+                    "stateMutability":  "view",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+
+                               ],
+                    "name":  "cerrarUrna",
+                    "outputs":  [
+
+                                ],
+                    "stateMutability":  "nonpayable",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+
+                               ],
+                    "name":  "clavePublicaAutoridad",
+                    "outputs":  [
+                                    {
+                                        "internalType":  "bytes",
+                                        "name":  "",
+                                        "type":  "bytes"
+                                    }
+                                ],
+                    "stateMutability":  "view",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+                                   {
+                                       "internalType":  "bytes",
+                                       "name":  "tokenFirmado",
+                                       "type":  "bytes"
+                                   },
+                                   {
+                                       "internalType":  "uint8",
+                                       "name":  "candidatoId",
+                                       "type":  "uint8"
+                                   }
+                               ],
+                    "name":  "emitirVoto",
+                    "outputs":  [
+
+                                ],
+                    "stateMutability":  "nonpayable",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+
+                               ],
+                    "name":  "estado",
+                    "outputs":  [
+                                    {
+                                        "internalType":  "enum VotacionContract.EstadoUrna",
+                                        "name":  "",
+                                        "type":  "uint8"
+                                    }
+                                ],
+                    "stateMutability":  "view",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+
+                               ],
+                    "name":  "fechaApertura",
+                    "outputs":  [
+                                    {
+                                        "internalType":  "uint256",
+                                        "name":  "",
+                                        "type":  "uint256"
+                                    }
+                                ],
+                    "stateMutability":  "view",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+
+                               ],
+                    "name":  "fechaCierre",
+                    "outputs":  [
+                                    {
+                                        "internalType":  "uint256",
+                                        "name":  "",
+                                        "type":  "uint256"
+                                    }
+                                ],
+                    "stateMutability":  "view",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+
+                               ],
+                    "name":  "obtenerResultados",
+                    "outputs":  [
+                                    {
+                                        "components":  [
+                                                           {
+                                                               "internalType":  "uint8",
+                                                               "name":  "id",
+                                                               "type":  "uint8"
+                                                           },
+                                                           {
+                                                               "internalType":  "string",
+                                                               "name":  "nombre",
+                                                               "type":  "string"
+                                                           },
+                                                           {
+                                                               "internalType":  "uint256",
+                                                               "name":  "votos",
+                                                               "type":  "uint256"
+                                                           }
+                                                       ],
+                                        "internalType":  "struct VotacionContract.Candidato[]",
+                                        "name":  "resultados",
+                                        "type":  "tuple[]"
+                                    }
+                                ],
+                    "stateMutability":  "view",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+
+                               ],
+                    "name":  "owner",
+                    "outputs":  [
+                                    {
+                                        "internalType":  "address",
+                                        "name":  "",
+                                        "type":  "address"
+                                    }
+                                ],
+                    "stateMutability":  "view",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+
+                               ],
+                    "name":  "renounceOwnership",
+                    "outputs":  [
+
+                                ],
+                    "stateMutability":  "pure",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+                                   {
+                                       "internalType":  "bytes32",
+                                       "name":  "",
+                                       "type":  "bytes32"
+                                   }
+                               ],
+                    "name":  "tokenUsado",
+                    "outputs":  [
+                                    {
+                                        "internalType":  "bool",
+                                        "name":  "",
+                                        "type":  "bool"
+                                    }
+                                ],
+                    "stateMutability":  "view",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+
+                               ],
+                    "name":  "totalVotosEmitidos",
+                    "outputs":  [
+                                    {
+                                        "internalType":  "uint256",
+                                        "name":  "",
+                                        "type":  "uint256"
+                                    }
+                                ],
+                    "stateMutability":  "view",
+                    "type":  "function"
+                },
+                {
+                    "inputs":  [
+                                   {
+                                       "internalType":  "address",
+                                       "name":  "newOwner",
+                                       "type":  "address"
+                                   }
+                               ],
+                    "name":  "transferOwnership",
+                    "outputs":  [
+
+                                ],
+                    "stateMutability":  "nonpayable",
+                    "type":  "function"
+                }
+            ]
+}

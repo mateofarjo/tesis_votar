@@ -33,12 +33,8 @@
     "middleware.ts",
     "app/**/*.ts",
     "app/**/*.tsx",
-    "hardhat.config.ts",
     "prisma.config.ts",
-    "contracts/scripts/**/*.ts",
     "lib/**/*.ts",
-    "test/**/*.ts",
-    "scripts/**/*.ts",
     "types/**/*.d.ts",
     ".next/types/**/*.ts"
   ],

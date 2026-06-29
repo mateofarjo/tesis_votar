@@ -181,6 +181,7 @@ export async function POST(request: Request) {
           lastName,
           phoneNumber: normalizeString(body.phoneNumber)
         },
+        timestamp: new Date().toISOString(),
         vendorData
       }
     });

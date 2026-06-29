@@ -21,6 +21,7 @@ export type VeriffSessionRequest = {
       lastName?: string;
       phoneNumber?: string;
     };
+    timestamp?: string;
     vendorData?: string;
   };
 };

@@ -30,10 +30,25 @@ export type ProcessedVeriffAttemptResult =
   | {
       attemptId: string;
       message: string;
+      outcome: "still_pending";
+      verificationStatus: "PENDIENTE";
+    }
+  | {
+      attemptId: string;
+      message: string;
       outcome: "processed";
       verificationStatus: VerificationStatus;
       voterEstado?: Estado;
     };
+
+// Solo estos estados de Veriff representan una decision final y negativa.
+// Cualquier otro valor (sesion recien creada, en revision, resubmission_requested,
+// o directamente sin "verification" todavia) significa que Veriff no decidio
+// nada aun y el intento debe seguir PENDIENTE en vez de marcarse como rechazado.
+function isTerminalRejection(payload: VeriffDecisionPayload): boolean {
+  const veriffStatus = payload.verification?.status;
+  return veriffStatus === "declined" || veriffStatus === "expired" || veriffStatus === "abandoned";
+}
 
 function mapRejectedStatus(payload: VeriffDecisionPayload): VerificationStatus {
   const veriffStatus = payload.verification?.status;
@@ -320,6 +335,15 @@ export async function processVeriffAttempt(
   const authoritativePayload = payload ?? (await getVeriffDecision(sessionId));
   if (isApprovedVeriffDecision(authoritativePayload)) {
     return processApprovedAttempt(attempt, authoritativePayload);
+  }
+
+  if (!isTerminalRejection(authoritativePayload)) {
+    return {
+      attemptId: attempt.id,
+      message: "Veriff todavia no emitio una decision final",
+      outcome: "still_pending",
+      verificationStatus: "PENDIENTE"
+    };
   }
 
   const reason =

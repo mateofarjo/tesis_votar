@@ -10,6 +10,7 @@ import { processVeriffAttempt } from "../../../lib/veriffWorkflow";
 import {
   createVeriffSession,
   createVeriffSessionSandbox,
+  getVeriffCallbackUrl,
   isSandboxMode,
   isVeriffConfigError,
   sandboxBiometricHash
@@ -22,22 +23,7 @@ type RegistroRequestBody = {
   documentType?: string;
   firstName?: string;
   lastName?: string;
-  phoneNumber?: string;
 };
-
-function getVeriffCallbackUrl(): string {
-  const explicitWebhookUrl = process.env.VERIFF_WEBHOOK_URL?.trim();
-  if (explicitWebhookUrl) {
-    return explicitWebhookUrl;
-  }
-
-  const baseUrl = process.env.NEXTAUTH_URL?.trim()?.replace(/\/+$/, "");
-  if (!baseUrl) {
-    throw new Error("Falta VERIFF_WEBHOOK_URL o NEXTAUTH_URL para construir el callback");
-  }
-
-  return `${baseUrl}/api/veriff/webhook`;
-}
 
 export async function POST(request: Request) {
   const clientIp = getClientIp(request.headers) ?? "unknown";
@@ -168,19 +154,6 @@ export async function POST(request: Request) {
     const veriffSession = await createVeriffSession({
       verification: {
         callback: getVeriffCallbackUrl(),
-        document: {
-          country: normalizeString(body.documentCountry),
-          number: dni,
-          type: normalizeString(body.documentType) ?? "ID_CARD"
-        },
-        endUserId: dniHash,
-        person: {
-          dateOfBirth: normalizeString(body.dateOfBirth),
-          firstName,
-          idNumber: dni,
-          lastName,
-          phoneNumber: normalizeString(body.phoneNumber)
-        },
         timestamp: new Date().toISOString(),
         vendorData
       }

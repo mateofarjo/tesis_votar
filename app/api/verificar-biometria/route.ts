@@ -6,21 +6,14 @@ import prisma from "../../../lib/prisma";
 import { getClientIp, getUserAgent } from "../../../lib/request";
 import { consumeRateLimit } from "../../../lib/rateLimit";
 import { processVeriffAttempt } from "../../../lib/veriffWorkflow";
-import { createVeriffSession } from "../../../lib/veriff";
-
-function getVeriffCallbackUrl(): string {
-  const explicitWebhookUrl = process.env.VERIFF_WEBHOOK_URL?.trim();
-  if (explicitWebhookUrl) {
-    return explicitWebhookUrl;
-  }
-
-  const baseUrl = process.env.NEXTAUTH_URL?.trim()?.replace(/\/+$/, "");
-  if (!baseUrl) {
-    throw new Error("Falta VERIFF_WEBHOOK_URL o NEXTAUTH_URL para construir el callback");
-  }
-
-  return `${baseUrl}/api/veriff/webhook`;
-}
+import {
+  createVeriffSession,
+  createVeriffSessionSandbox,
+  getVeriffCallbackUrl,
+  isSandboxMode,
+  isVeriffConfigError,
+  sandboxBiometricHash
+} from "../../../lib/veriff";
 
 export async function POST(request: Request) {
   const session = await getServerAuthSession();
@@ -72,11 +65,52 @@ export async function POST(request: Request) {
     voterId: voter.id
   });
 
+  // ── Sandbox mode: bypass Veriff y auto-aprobar ────────────────────────────────
+  if (isSandboxMode()) {
+    const fakeSession = createVeriffSessionSandbox();
+    const sessionId = fakeSession.verification!.id;
+    const biometricHash = sandboxBiometricHash(voter.dniHash ?? voter.id);
+    const resolvedAt = new Date();
+
+    const attempt = await prisma.verificationAttempt.create({
+      data: {
+        biometricHash,
+        biometricMatch: true,
+        dniHash: voter.dniHash,
+        referenceId: vendorData,
+        resolvedAt,
+        status: "APROBADO",
+        type: "LIVENESS",
+        veriffSessionId: sessionId,
+        voterId: voter.id
+      },
+      select: { id: true, status: true, veriffSessionId: true }
+    });
+
+    await prisma.voter.update({
+      data: { biometricHash },
+      where: { id: voter.id }
+    });
+
+    return NextResponse.json(
+      {
+        attemptId: attempt.id,
+        sandbox: true,
+        status: attempt.status,
+        veriffSessionId: sessionId,
+        veriffSessionToken: fakeSession.verification?.sessionToken ?? null,
+        veriffUrl: fakeSession.verification?.url ?? null
+      },
+      { status: 201 }
+    );
+  }
+
+  // ── Flujo real con Veriff ─────────────────────────────────────────────────────
   try {
     const veriffSession = await createVeriffSession({
       verification: {
         callback: getVeriffCallbackUrl(),
-        endUserId: voter.id,
+        timestamp: new Date().toISOString(),
         vendorData
       }
     });
@@ -129,6 +163,13 @@ export async function POST(request: Request) {
       userAgent,
       voterId: voter.id
     });
+
+    if (isVeriffConfigError(error)) {
+      return NextResponse.json(
+        { error: "Servicio de validacion no disponible" },
+        { status: 503 }
+      );
+    }
 
     return NextResponse.json(
       { error: "No se pudo iniciar la verificacion biometrica" },

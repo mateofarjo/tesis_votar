@@ -8,19 +8,6 @@ type HeadersLike =
 export type VeriffSessionRequest = {
   verification: {
     callback?: string;
-    document?: {
-      country?: string;
-      number?: string;
-      type?: string;
-    };
-    endUserId?: string;
-    person?: {
-      dateOfBirth?: string;
-      firstName?: string;
-      idNumber?: string;
-      lastName?: string;
-      phoneNumber?: string;
-    };
     timestamp?: string;
     vendorData?: string;
   };
@@ -209,6 +196,20 @@ export function isSandboxMode(): boolean {
   return process.env.VERIFF_SANDBOX_MODE?.trim().toLowerCase() === "true";
 }
 
+export function getVeriffCallbackUrl(): string {
+  const explicitWebhookUrl = process.env.VERIFF_WEBHOOK_URL?.trim();
+  if (explicitWebhookUrl) {
+    return explicitWebhookUrl;
+  }
+
+  const baseUrl = process.env.NEXTAUTH_URL?.trim()?.replace(/\/+$/, "");
+  if (!baseUrl) {
+    throw new Error("Falta VERIFF_WEBHOOK_URL o NEXTAUTH_URL para construir el callback");
+  }
+
+  return `${baseUrl}/api/veriff/webhook`;
+}
+
 export function createVeriffSessionSandbox(): VeriffSessionResponse {
   const sessionId = `sandbox-${randomUUID()}`;
   return {
@@ -231,6 +232,8 @@ export function isVeriffConfigError(error: unknown): boolean {
   return (
     msg.includes("Falta VERIFF_API_KEY") ||
     msg.includes("Falta VERIFF_SECRET_KEY") ||
+    msg.includes("Falta VERIFF_WEBHOOK_URL") ||
+    msg.includes("Falta NEXTAUTH_URL") ||
     msg.includes("respondio 401") ||
     msg.includes("respondio 403")
   );

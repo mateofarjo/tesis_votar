@@ -10,7 +10,6 @@ import {
   Fingerprint,
   Globe,
   Hash,
-  Phone,
   User,
   UserPlus
 } from "lucide-react";
@@ -22,7 +21,6 @@ type RegistroFormState = {
   documentType: string;
   firstName: string;
   lastName: string;
-  phoneNumber: string;
 };
 
 type RegistroInitResponse = {
@@ -55,8 +53,7 @@ const DEFAULT_FORM: RegistroFormState = {
   documentCountry: "AR",
   documentType: "ID_CARD",
   firstName: "",
-  lastName: "",
-  phoneNumber: ""
+  lastName: ""
 };
 
 const POLL_INTERVAL_MS = 4_000;
@@ -310,8 +307,8 @@ export default function RegistroPage() {
                 </label>
               </div>
 
-              {/* País / Tipo / Teléfono */}
-              <div className="grid gap-4 sm:grid-cols-3">
+              {/* País / Tipo */}
+              <div className="grid gap-4 sm:grid-cols-2">
                 <label className="grid gap-2">
                   <span className="field-label">País del doc.</span>
                   <div className="relative">
@@ -326,23 +323,16 @@ export default function RegistroPage() {
                 </label>
                 <label className="grid gap-2">
                   <span className="field-label">Tipo de doc.</span>
-                  <input
+                  <select
                     className="field-input"
                     onChange={(e) => setFormState((s) => ({ ...s, documentType: e.target.value }))}
                     value={formState.documentType}
-                  />
-                </label>
-                <label className="grid gap-2">
-                  <span className="field-label">Teléfono</span>
-                  <div className="relative">
-                    <Phone size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-ink/35" />
-                    <input
-                      className="field-input field-input-icon"
-                      onChange={(e) => setFormState((s) => ({ ...s, phoneNumber: e.target.value }))}
-                      placeholder="+5491122334455"
-                      value={formState.phoneNumber}
-                    />
-                  </div>
+                  >
+                    <option value="ID_CARD">DNI / Cédula</option>
+                    <option value="PASSPORT">Pasaporte</option>
+                    <option value="DRIVERS_LICENSE">Licencia de conducir</option>
+                    <option value="RESIDENCE_PERMIT">Permiso de residencia</option>
+                  </select>
                 </label>
               </div>
 

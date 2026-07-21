@@ -31,6 +31,7 @@ type ResultadosResponse = {
 };
 type BiometricInitResponse = {
   attemptId: string;
+  sandbox?: boolean;
   status: string;
   veriffSessionId: string;
   veriffSessionToken: string | null;
@@ -228,9 +229,13 @@ export default function VotarPage() {
         voterEstado: session?.user.estado ?? null,
         votoEmitido: false
       });
-      setNotice("Completá la prueba de vida en la ventana de Veriff.");
       beginBiometricPolling(payload.veriffSessionId);
-      await openVeriffFrame(payload.veriffUrl);
+      if (payload.sandbox) {
+        setNotice("Modo demo: biometría aprobada automáticamente.");
+      } else {
+        setNotice("Completá la prueba de vida en la ventana de Veriff.");
+        await openVeriffFrame(payload.veriffUrl);
+      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "No se pudo iniciar la verificación biométrica");
     } finally {

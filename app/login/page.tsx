@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import { AlertCircle, Eye, EyeOff, Fingerprint, Lock, LogIn, ShieldCheck, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -15,7 +14,6 @@ function getLoginErrorMessage(error: string | null | undefined) {
 }
 
 export default function LoginPage() {
-  const router = useRouter();
   const { data: session, status } = useSession();
   const [mode, setMode] = useState<LoginMode>("VOTANTE");
   const [dni, setDni] = useState("");
@@ -27,9 +25,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (status === "authenticated") {
-      router.replace(session?.user.role === "AUTORIDAD" ? "/admin" : "/votar");
+      window.location.href = session?.user.role === "AUTORIDAD" ? "/admin" : "/votar";
     }
-  }, [router, session?.user.role, status]);
+  }, [session?.user.role, status]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -51,8 +49,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.replace(mode === "AUTORIDAD" ? "/admin" : "/votar");
-    router.refresh();
+    window.location.href = mode === "AUTORIDAD" ? "/admin" : "/votar";
   }
 
   return (

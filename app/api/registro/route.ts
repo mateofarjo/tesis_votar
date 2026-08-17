@@ -57,10 +57,13 @@ export async function POST(request: Request) {
   const dni = normalizeString(body.dni);
   const firstName = normalizeString(body.firstName);
   const lastName = normalizeString(body.lastName);
+  const dateOfBirth = normalizeString(body.dateOfBirth);
+  const documentCountry = normalizeString(body.documentCountry)?.toUpperCase();
+  const documentType = normalizeString(body.documentType);
 
-  if (!dni || !firstName || !lastName) {
+  if (!dni || !firstName || !lastName || !dateOfBirth || !documentCountry || !documentType) {
     return NextResponse.json(
-      { error: "dni, firstName y lastName son obligatorios" },
+      { error: "dni, firstName, lastName, dateOfBirth, documentCountry y documentType son obligatorios" },
       { status: 400 }
     );
   }
@@ -83,10 +86,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const vendorData = JSON.stringify({
-    dniHash,
-    flow: "REGISTRO"
-  });
+  const vendorData = dniHash;
 
   // ── Sandbox mode: bypass Veriff and auto-approve ──────────────────────────────
   if (isSandboxMode()) {
@@ -154,6 +154,17 @@ export async function POST(request: Request) {
     const veriffSession = await createVeriffSession({
       verification: {
         callback: getVeriffCallbackUrl(),
+        document: {
+          country: documentCountry,
+          number: dni,
+          type: documentType
+        },
+        person: {
+          dateOfBirth,
+          firstName,
+          idNumber: dni,
+          lastName
+        },
         timestamp: new Date().toISOString(),
         vendorData
       }
@@ -188,6 +199,7 @@ export async function POST(request: Request) {
       ipAddress: clientIp,
       metadata: {
         dniHash,
+        flow: "REGISTRO",
         veriffSessionId: verification.id
       },
       resourceId: attempt.id,

@@ -60,10 +60,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const vendorData = JSON.stringify({
-    flow: "LIVENESS",
-    voterId: voter.id
-  });
+  const vendorData = voter.dniHash ?? voter.id;
 
   // ── Sandbox mode: bypass Veriff y auto-aprobar ────────────────────────────────
   if (isSandboxMode()) {

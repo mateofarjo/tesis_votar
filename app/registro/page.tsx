@@ -26,10 +26,15 @@ type RegistroFormState = {
 type RegistroInitResponse = {
   attemptId: string;
   sandbox?: boolean;
-  status: string;
+  status: "PENDIENTE" | "APROBADO" | "RECHAZADO" | "EXPIRADO" | "ERROR";
   veriffSessionId: string;
   veriffSessionToken: string | null;
   veriffUrl: string | null;
+  voter?: {
+    createdAt?: string;
+    estado: string;
+    id: string;
+  } | null;
 };
 
 type RegistroStatusResponse = {
@@ -61,9 +66,26 @@ const POLL_INTERVAL_MS = 4_000;
 type Step = "datos" | "veriff" | "aprobado";
 
 function getStep(attempt: RegistroInitResponse | null, status: RegistroStatusResponse | null): Step {
-  if (status?.status === "APROBADO") return "aprobado";
+  if (status?.status === "APROBADO" || attempt?.status === "APROBADO") return "aprobado";
   if (attempt) return "veriff";
   return "datos";
+}
+
+function initStatusFromAttempt(attempt: RegistroInitResponse): RegistroStatusResponse {
+  return {
+    attemptId: attempt.attemptId,
+    failureReason: null,
+    resolvedAt: attempt.status === "PENDIENTE" ? null : new Date().toISOString(),
+    status: attempt.status,
+    veriffSessionId: attempt.veriffSessionId,
+    voter: attempt.voter
+      ? {
+          createdAt: attempt.voter.createdAt ?? new Date().toISOString(),
+          estado: attempt.voter.estado,
+          id: attempt.voter.id
+        }
+      : null
+  };
 }
 
 function StepBar({ current }: { current: Step }) {
@@ -120,6 +142,40 @@ function StepBar({ current }: { current: Step }) {
   );
 }
 
+function AccountReadyPanel({ status }: { status: RegistroStatusResponse | null }) {
+  return (
+    <div className="grid gap-6 py-4">
+      <div className="flex flex-col items-center gap-4 rounded-[28px] border border-emerald-200 bg-emerald-50/70 px-6 py-8 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/20">
+          <CheckCircle2 size={34} />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-bold text-brand-ink">Tu cuenta está lista</h2>
+          <p className="mx-auto max-w-md text-sm leading-relaxed text-brand-ink/65">
+            Veriff aprobó tu identidad y el padrón ya puede reconocerte como votante registrado.
+          </p>
+        </div>
+        {status?.voter && (
+          <dl className="grid w-full max-w-md gap-2 text-left text-sm sm:grid-cols-2">
+            <div className="info-row">
+              <dt className="text-xs text-brand-teal">Estado</dt>
+              <dd className="font-semibold text-brand-ink">{status.voter.estado}</dd>
+            </div>
+            <div className="info-row">
+              <dt className="text-xs text-brand-teal">Registro</dt>
+              <dd className="break-all font-mono text-xs">{status.voter.id}</dd>
+            </div>
+          </dl>
+        )}
+        <Link className="cta-button mt-1" href="/login">
+          Continuar al login
+          <ArrowRight size={15} />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export default function RegistroPage() {
   const [formState, setFormState] = useState<RegistroFormState>(DEFAULT_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -139,15 +195,17 @@ export default function RegistroPage() {
     };
   }, []);
 
-  async function openVeriffFrame(veriffUrl: string) {
+  async function openVeriffFrame(veriffUrl: string, attemptId: string, sessionId: string) {
     const { MESSAGES, createVeriffFrame } = await import("@veriff/incontext-sdk");
     frameRef.current?.close();
     frameRef.current = createVeriffFrame({
       lang: "es",
       onEvent(message) {
         if (message === MESSAGES.STARTED) setNotice("Veriff inició la captura de documento y biometría.");
-        if (message === MESSAGES.SUBMITTED || message === MESSAGES.FINISHED)
+        if (message === MESSAGES.SUBMITTED || message === MESSAGES.FINISHED) {
           setNotice("Veriff recibió la evidencia. Esperamos la decisión final.");
+          void refreshAttemptStatus(attemptId, sessionId);
+        }
         if (message === MESSAGES.CANCELED)
           setNotice("La ventana de Veriff fue cerrada. Podés retomar enviando un nuevo registro.");
       },
@@ -208,13 +266,14 @@ export default function RegistroPage() {
       if (!payload.sandbox && !payload.veriffUrl) throw new Error("Veriff no devolvió la URL de la sesión");
 
       setAttempt(payload);
+      setAttemptStatus(initStatusFromAttempt(payload));
       if (payload.sandbox) {
         setNotice("Modo demo: identidad aprobada automáticamente. Tu cuenta ya está activa.");
         beginPolling(payload.attemptId, payload.veriffSessionId);
       } else {
         setNotice("Sesión creada. Completá la captura en la ventana segura de Veriff.");
         beginPolling(payload.attemptId, payload.veriffSessionId);
-        await openVeriffFrame(payload.veriffUrl!);
+        await openVeriffFrame(payload.veriffUrl!, payload.attemptId, payload.veriffSessionId);
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "No se pudo iniciar el registro");
@@ -245,110 +304,114 @@ export default function RegistroPage() {
             {/* Step bar */}
             <StepBar current={currentStep} />
 
-            <form className="grid gap-5" onSubmit={handleSubmit}>
-              {/* Nombre / Apellido */}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-2">
-                  <span className="field-label">Nombre</span>
-                  <div className="relative">
-                    <User size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-ink/35" />
-                    <input
-                      className="field-input field-input-icon"
-                      onChange={(e) => setFormState((s) => ({ ...s, firstName: e.target.value }))}
-                      placeholder="María"
-                      required
-                      value={formState.firstName}
-                    />
-                  </div>
-                </label>
-                <label className="grid gap-2">
-                  <span className="field-label">Apellido</span>
-                  <div className="relative">
-                    <User size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-ink/35" />
-                    <input
-                      className="field-input field-input-icon"
-                      onChange={(e) => setFormState((s) => ({ ...s, lastName: e.target.value }))}
-                      placeholder="González"
-                      required
-                      value={formState.lastName}
-                    />
-                  </div>
-                </label>
-              </div>
+            {currentStep === "aprobado" ? (
+              <AccountReadyPanel status={attemptStatus} />
+            ) : (
+              <form className="grid gap-5" onSubmit={handleSubmit}>
+                {/* Nombre / Apellido */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="grid gap-2">
+                    <span className="field-label">Nombre</span>
+                    <div className="relative">
+                      <User size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-ink/35" />
+                      <input
+                        className="field-input field-input-icon"
+                        onChange={(e) => setFormState((s) => ({ ...s, firstName: e.target.value }))}
+                        placeholder="María"
+                        required
+                        value={formState.firstName}
+                      />
+                    </div>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="field-label">Apellido</span>
+                    <div className="relative">
+                      <User size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-ink/35" />
+                      <input
+                        className="field-input field-input-icon"
+                        onChange={(e) => setFormState((s) => ({ ...s, lastName: e.target.value }))}
+                        placeholder="González"
+                        required
+                        value={formState.lastName}
+                      />
+                    </div>
+                  </label>
+                </div>
 
-              {/* DNI / Fecha */}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-2">
-                  <span className="field-label">DNI</span>
-                  <div className="relative">
-                    <Hash size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-ink/35" />
-                    <input
-                      className="field-input field-input-icon"
-                      inputMode="numeric"
-                      onChange={(e) => setFormState((s) => ({ ...s, dni: e.target.value }))}
-                      placeholder="30111222"
-                      required
-                      value={formState.dni}
-                    />
-                  </div>
-                </label>
-                <label className="grid gap-2">
-                  <span className="field-label">Fecha de nacimiento</span>
-                  <div className="relative">
-                    <Clock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-ink/35" />
-                    <input
-                      className="field-input field-input-icon"
-                      onChange={(e) => setFormState((s) => ({ ...s, dateOfBirth: e.target.value }))}
-                      required
-                      type="date"
-                      value={formState.dateOfBirth}
-                    />
-                  </div>
-                </label>
-              </div>
+                {/* DNI / Fecha */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="grid gap-2">
+                    <span className="field-label">DNI</span>
+                    <div className="relative">
+                      <Hash size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-ink/35" />
+                      <input
+                        className="field-input field-input-icon"
+                        inputMode="numeric"
+                        onChange={(e) => setFormState((s) => ({ ...s, dni: e.target.value }))}
+                        placeholder="30111222"
+                        required
+                        value={formState.dni}
+                      />
+                    </div>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="field-label">Fecha de nacimiento</span>
+                    <div className="relative">
+                      <Clock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-ink/35" />
+                      <input
+                        className="field-input field-input-icon"
+                        onChange={(e) => setFormState((s) => ({ ...s, dateOfBirth: e.target.value }))}
+                        required
+                        type="date"
+                        value={formState.dateOfBirth}
+                      />
+                    </div>
+                  </label>
+                </div>
 
-              {/* País / Tipo */}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-2">
-                  <span className="field-label">País del doc.</span>
-                  <div className="relative">
-                    <Globe size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-ink/35" />
-                    <input
-                      className="field-input field-input-icon uppercase"
-                      maxLength={2}
-                      onChange={(e) => setFormState((s) => ({ ...s, documentCountry: e.target.value.toUpperCase() }))}
-                      value={formState.documentCountry}
-                    />
-                  </div>
-                </label>
-                <label className="grid gap-2">
-                  <span className="field-label">Tipo de doc.</span>
-                  <select
-                    className="field-input"
-                    onChange={(e) => setFormState((s) => ({ ...s, documentType: e.target.value }))}
-                    value={formState.documentType}
-                  >
-                    <option value="ID_CARD">DNI / Cédula</option>
-                    <option value="PASSPORT">Pasaporte</option>
-                    <option value="DRIVERS_LICENSE">Licencia de conducir</option>
-                    <option value="RESIDENCE_PERMIT">Permiso de residencia</option>
-                  </select>
-                </label>
-              </div>
+                {/* País / Tipo */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="grid gap-2">
+                    <span className="field-label">País del doc.</span>
+                    <div className="relative">
+                      <Globe size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-ink/35" />
+                      <input
+                        className="field-input field-input-icon uppercase"
+                        maxLength={2}
+                        onChange={(e) => setFormState((s) => ({ ...s, documentCountry: e.target.value.toUpperCase() }))}
+                        value={formState.documentCountry}
+                      />
+                    </div>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="field-label">Tipo de doc.</span>
+                    <select
+                      className="field-input"
+                      onChange={(e) => setFormState((s) => ({ ...s, documentType: e.target.value }))}
+                      value={formState.documentType}
+                    >
+                      <option value="ID_CARD">DNI / Cédula</option>
+                      <option value="PASSPORT">Pasaporte</option>
+                      <option value="DRIVERS_LICENSE">Licencia de conducir</option>
+                      <option value="RESIDENCE_PERMIT">Permiso de residencia</option>
+                    </select>
+                  </label>
+                </div>
 
-              <div className="flex flex-col gap-3 pt-2 sm:flex-row">
-                <button className="cta-button" disabled={isSubmitting} type="submit">
-                  {isSubmitting ? (
-                    <><span className="spinner-sm" /> Creando sesión...</>
-                  ) : (
-                    <><UserPlus size={15} /> Iniciar verificación</>
-                  )}
-                </button>
-                <Link className="secondary-button" href="/login">
-                  Ya estoy registrado
-                </Link>
-              </div>
-            </form>
+                <div className="flex flex-col gap-3 pt-2 sm:flex-row">
+                  <button className="cta-button" disabled={isSubmitting} type="submit">
+                    {isSubmitting ? (
+                      <><span className="spinner-sm" /> Creando sesión...</>
+                    ) : (
+                      <><UserPlus size={15} /> Iniciar verificación</>
+                    )}
+                  </button>
+                  <Link className="secondary-button" href="/login">
+                    Ya estoy registrado
+                  </Link>
+                </div>
+              </form>
+            )}
           </div>
         </section>
 

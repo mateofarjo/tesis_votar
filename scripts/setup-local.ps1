@@ -31,7 +31,12 @@ Write-Host "      PostgreSQL listo en localhost:5432" -ForegroundColor Green
 
 # ── 2. Generar claves RSA ──────────────────────────────────────────────────────
 Write-Host "[2/6] Generando par de claves RSA 2048 bits..." -ForegroundColor Yellow
-$KeyOutput = npx ts-node -e "const {generateKeyPair} = require('./lib/blindSignature'); generateKeyPair();" 2>&1
+$KeyArgs = @(
+    "ts-node",
+    "-e",
+    "const { generateKeyPair } = require('./lib/blindSignature'); generateKeyPair();"
+)
+$KeyOutput = & npx @KeyArgs 2>&1
 # El output tiene dos lineas: RSA_PRIVATE_KEY_PEM="..." y RSA_PUBLIC_KEY_PEM="..."
 $PrivateLine = ($KeyOutput | Select-String 'RSA_PRIVATE_KEY_PEM=').Line
 $PublicLine  = ($KeyOutput | Select-String 'RSA_PUBLIC_KEY_PEM=').Line

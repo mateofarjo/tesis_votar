@@ -13,46 +13,30 @@ import {
   User,
   UserPlus
 } from "lucide-react";
+import {
+  closeIdentityVerificationFrames,
+  openIdentityVerificationFrame,
+  type IdentityFrameController
+} from "../adapters/identityVerificationFrame";
+import {
+  clearPendingRegistrationVerification,
+  isTerminalVerificationStatus,
+  loadPendingRegistrationVerification,
+  savePendingRegistrationVerification
+} from "../adapters/identityVerificationStorage";
+import {
+  createRegistrationVerification,
+  getVerificationProvider,
+  getVerificationSessionId,
+  getVerificationUrl,
+  getRegistrationVerificationStatus,
+  initRegistrationStatusFromAttempt,
+  type RegistrationFormPayload,
+  type RegistrationInitResponse,
+  type RegistrationStatusResponse
+} from "../services/identityVerification";
 
-type RegistroFormState = {
-  dateOfBirth: string;
-  dni: string;
-  documentCountry: string;
-  documentType: string;
-  firstName: string;
-  lastName: string;
-};
-
-type RegistroInitResponse = {
-  attemptId: string;
-  sandbox?: boolean;
-  status: "PENDIENTE" | "APROBADO" | "RECHAZADO" | "EXPIRADO" | "ERROR";
-  veriffSessionId: string;
-  veriffSessionToken: string | null;
-  veriffUrl: string | null;
-  voter?: {
-    createdAt?: string;
-    estado: string;
-    id: string;
-  } | null;
-};
-
-type RegistroStatusResponse = {
-  attemptId: string;
-  failureReason: string | null;
-  resolvedAt: string | null;
-  status: "PENDIENTE" | "APROBADO" | "RECHAZADO" | "EXPIRADO" | "ERROR";
-  veriffSessionId: string;
-  voter: {
-    createdAt: string;
-    estado: string;
-    id: string;
-  } | null;
-};
-
-type VeriffFrameController = { close: () => void };
-
-const DEFAULT_FORM: RegistroFormState = {
+const DEFAULT_FORM: RegistrationFormPayload = {
   dateOfBirth: "",
   dni: "",
   documentCountry: "AR",
@@ -64,28 +48,13 @@ const DEFAULT_FORM: RegistroFormState = {
 const POLL_INTERVAL_MS = 4_000;
 
 type Step = "datos" | "veriff" | "aprobado";
+type RegistroInitResponse = RegistrationInitResponse;
+type RegistroStatusResponse = RegistrationStatusResponse;
 
 function getStep(attempt: RegistroInitResponse | null, status: RegistroStatusResponse | null): Step {
   if (status?.status === "APROBADO" || attempt?.status === "APROBADO") return "aprobado";
   if (attempt) return "veriff";
   return "datos";
-}
-
-function initStatusFromAttempt(attempt: RegistroInitResponse): RegistroStatusResponse {
-  return {
-    attemptId: attempt.attemptId,
-    failureReason: null,
-    resolvedAt: attempt.status === "PENDIENTE" ? null : new Date().toISOString(),
-    status: attempt.status,
-    veriffSessionId: attempt.veriffSessionId,
-    voter: attempt.voter
-      ? {
-          createdAt: attempt.voter.createdAt ?? new Date().toISOString(),
-          estado: attempt.voter.estado,
-          id: attempt.voter.id
-        }
-      : null
-  };
 }
 
 function StepBar({ current }: { current: Step }) {
@@ -152,7 +121,7 @@ function AccountReadyPanel({ status }: { status: RegistroStatusResponse | null }
         <div className="space-y-2">
           <h2 className="text-2xl font-bold text-brand-ink">Tu cuenta está lista</h2>
           <p className="mx-auto max-w-md text-sm leading-relaxed text-brand-ink/65">
-            Veriff aprobó tu identidad y el padrón ya puede reconocerte como votante registrado.
+            Tu identidad fue aprobada y el padrón ya puede reconocerte como votante registrado.
           </p>
         </div>
         {status?.voter && (
@@ -177,14 +146,15 @@ function AccountReadyPanel({ status }: { status: RegistroStatusResponse | null }
 }
 
 export default function RegistroPage() {
-  const [formState, setFormState] = useState<RegistroFormState>(DEFAULT_FORM);
+  const [formState, setFormState] = useState<RegistrationFormPayload>(DEFAULT_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>("Completá tus datos y preparate para la captura.");
   const [attempt, setAttempt] = useState<RegistroInitResponse | null>(null);
   const [attemptStatus, setAttemptStatus] = useState<RegistroStatusResponse | null>(null);
   const pollingRef = useRef<number | null>(null);
-  const frameRef = useRef<VeriffFrameController | null>(null);
+  const frameRef = useRef<IdentityFrameController | null>(null);
+  const terminalStatusRef = useRef(false);
 
   const currentStep = getStep(attempt, attemptStatus);
 
@@ -195,44 +165,84 @@ export default function RegistroPage() {
     };
   }, []);
 
-  async function openVeriffFrame(veriffUrl: string, attemptId: string, sessionId: string) {
-    const { MESSAGES, createVeriffFrame } = await import("@veriff/incontext-sdk");
-    frameRef.current?.close();
-    frameRef.current = createVeriffFrame({
-      lang: "es",
-      onEvent(message) {
-        if (message === MESSAGES.STARTED) setNotice("Veriff inició la captura de documento y biometría.");
-        if (message === MESSAGES.SUBMITTED || message === MESSAGES.FINISHED) {
-          setNotice("Veriff recibió la evidencia. Esperamos la decisión final.");
-          void refreshAttemptStatus(attemptId, sessionId);
-        }
-        if (message === MESSAGES.CANCELED)
-          setNotice("La ventana de Veriff fue cerrada. Podés retomar enviando un nuevo registro.");
+  useEffect(() => {
+    const pendingAttempt = loadPendingRegistrationVerification();
+    if (!pendingAttempt) return;
+
+    const sessionId = getVerificationSessionId(pendingAttempt);
+    terminalStatusRef.current = false;
+    setAttempt(pendingAttempt);
+    setAttemptStatus(initRegistrationStatusFromAttempt(pendingAttempt));
+    setNotice("Retomando la verificación pendiente.");
+    beginPolling(pendingAttempt.attemptId, sessionId);
+
+    if (!pendingAttempt.sandbox && getVerificationUrl(pendingAttempt)) {
+      void openVerificationFrame(pendingAttempt);
+    }
+  }, []);
+
+  async function openVerificationFrame(payload: RegistroInitResponse) {
+    const verificationUrl = getVerificationUrl(payload);
+    if (!verificationUrl) throw new Error("El proveedor no devolvió la URL de la sesión");
+    const provider = getVerificationProvider(payload);
+    const sessionId = getVerificationSessionId(payload);
+
+    closeVerificationFrame();
+    const frame = await openIdentityVerificationFrame({
+      onCanceled() {
+        setNotice("La ventana de verificación fue cerrada. Podés retomar enviando un nuevo registro.");
       },
-      onReload() { window.location.reload(); },
-      url: veriffUrl
+      onFinished() {
+        setNotice("El proveedor recibió la evidencia. Esperamos la decisión final.");
+        void refreshAttemptStatus(payload.attemptId, sessionId);
+      },
+      onReload() {
+        window.location.reload();
+      },
+      onStarted() {
+        setNotice("El proveedor inició la captura de documento y biometría.");
+      },
+      provider,
+      url: verificationUrl
     });
+
+    if (terminalStatusRef.current) {
+      frame.close();
+      return;
+    }
+
+    frameRef.current = frame;
   }
 
   function stopPolling() {
     if (pollingRef.current) { window.clearInterval(pollingRef.current); pollingRef.current = null; }
   }
 
+  function closeVerificationFrame() {
+    frameRef.current?.close();
+    frameRef.current = null;
+    closeIdentityVerificationFrames();
+  }
+
   async function refreshAttemptStatus(attemptId: string, sessionId: string) {
     try {
-      const res = await fetch(
-        `/api/registro?attemptId=${encodeURIComponent(attemptId)}&sessionId=${encodeURIComponent(sessionId)}&refresh=1`,
-        { cache: "no-store" }
-      );
-      const payload = (await res.json()) as RegistroStatusResponse & { error?: string };
-      if (!res.ok) throw new Error(payload.error ?? "No se pudo consultar el estado del registro");
+      const payload = await getRegistrationVerificationStatus({
+        attemptId,
+        refresh: true,
+        sessionId
+      });
+      terminalStatusRef.current = isTerminalVerificationStatus(payload.status);
       startTransition(() => setAttemptStatus(payload));
       if (payload.status === "APROBADO") {
         stopPolling();
+        closeVerificationFrame();
+        clearPendingRegistrationVerification();
         setNotice("Tu identidad quedó verificada. Ya podés iniciar sesión para votar.");
       }
       if (["RECHAZADO", "EXPIRADO", "ERROR"].includes(payload.status)) {
         stopPolling();
+        closeVerificationFrame();
+        clearPendingRegistrationVerification();
         setErrorMessage(payload.failureReason ?? "La sesión no pudo aprobarse. Iniciá un nuevo registro.");
       }
     } catch (error) {
@@ -252,28 +262,28 @@ export default function RegistroPage() {
     setErrorMessage(null);
     setAttempt(null);
     setAttemptStatus(null);
-    setNotice("Solicitando sesión de identidad a Veriff...");
+    setNotice("Solicitando sesión de identidad...");
     stopPolling();
+    closeVerificationFrame();
+    terminalStatusRef.current = false;
+    clearPendingRegistrationVerification();
 
     try {
-      const res = await fetch("/api/registro", {
-        body: JSON.stringify(formState),
-        headers: { "Content-Type": "application/json" },
-        method: "POST"
-      });
-      const payload = (await res.json()) as RegistroInitResponse & { error?: string };
-      if (!res.ok) throw new Error(payload.error ?? "No se pudo iniciar el registro");
-      if (!payload.sandbox && !payload.veriffUrl) throw new Error("Veriff no devolvió la URL de la sesión");
+      const payload = await createRegistrationVerification(formState);
+      if (!payload.sandbox && !getVerificationUrl(payload)) throw new Error("El proveedor no devolvió la URL de la sesión");
 
+      const sessionId = getVerificationSessionId(payload);
+      terminalStatusRef.current = isTerminalVerificationStatus(payload.status);
       setAttempt(payload);
-      setAttemptStatus(initStatusFromAttempt(payload));
+      setAttemptStatus(initRegistrationStatusFromAttempt(payload));
       if (payload.sandbox) {
         setNotice("Modo demo: identidad aprobada automáticamente. Tu cuenta ya está activa.");
-        beginPolling(payload.attemptId, payload.veriffSessionId);
+        beginPolling(payload.attemptId, sessionId);
       } else {
-        setNotice("Sesión creada. Completá la captura en la ventana segura de Veriff.");
-        beginPolling(payload.attemptId, payload.veriffSessionId);
-        await openVeriffFrame(payload.veriffUrl!, payload.attemptId, payload.veriffSessionId);
+        savePendingRegistrationVerification(payload);
+        setNotice("Sesión creada. Completá la captura en la ventana segura.");
+        beginPolling(payload.attemptId, sessionId);
+        await openVerificationFrame(payload);
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "No se pudo iniciar el registro");
@@ -293,7 +303,7 @@ export default function RegistroPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-2">
                 <span className="eyebrow">Registro de votante</span>
-                <h1 className="section-title">Alta segura con Veriff y prueba de vida</h1>
+                <h1 className="section-title">Alta segura con prueba de vida</h1>
                 <p className="max-w-lg text-sm text-brand-ink/65 sm:text-base">
                   Solo persisten hashes del DNI y biometría validada. Nunca se guardan
                   imágenes ni vectores crudos.
@@ -456,7 +466,7 @@ export default function RegistroPage() {
             <h2 className="text-lg font-semibold text-brand-ink">Después del alta</h2>
             <ol className="mt-4 grid gap-2">
               {[
-                "Veriff aprueba el documento y el rostro.",
+                "El proveedor aprueba el documento y el rostro.",
                 "El backend genera dniHash y biometricHash.",
                 "El votante queda listo para iniciar sesión y pasar al liveness final."
               ].map((text, i) => (

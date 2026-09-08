@@ -20,44 +20,29 @@ import { useRouter } from "next/navigation";
 import { startTransition, useEffect, useRef, useState } from "react";
 import { ShimmerButton } from "../components/ui/shimmer-button";
 import { SpotlightCard } from "../components/ui/spotlight-card";
-
-type ResultadoCandidato = { id: number; nombre: string; votos: number };
-type ResultadosResponse = {
-    candidatos: ResultadoCandidato[];
-    contractAddress: string;
-    estadoUrna: "CERRADA" | "ABIERTA" | "FINALIZADA";
-    totalVotos: number;
-    updatedAt: string;
-};
-type BiometricInitResponse = {
-    attemptId: string;
-    sandbox?: boolean;
-    status: string;
-    veriffSessionId: string;
-    veriffSessionToken: string | null;
-    veriffUrl: string | null;
-};
-type BiometricStatusResponse = {
-    attemptId: string;
-    biometricMatch: boolean | null;
-    failureReason: string | null;
-    resolvedAt: string | null;
-    status: "PENDIENTE" | "APROBADO" | "RECHAZADO" | "EXPIRADO" | "ERROR";
-    veriffSessionId: string;
-    voterEstado: string | null;
-    votoEmitido: boolean;
-};
-type VoteTokenResponse = {
-    expiresAt: string;
-    tokenDigestHex: string;
-    tokenFirmado: string;
-};
-type VoteReceipt = {
-    blockNumber: number;
-    contractAddress: string;
-    transactionHash: string;
-};
-type VeriffFrameController = { close: () => void };
+import { openIdentityVerificationFrame, type IdentityFrameController } from "../adapters/identityVerificationFrame";
+import {
+    clearPendingBiometricVerification,
+    loadPendingBiometricVerification,
+    savePendingBiometricVerification,
+} from "../adapters/identityVerificationStorage";
+import {
+    createVoteToken,
+    getResultados,
+    submitVote as submitVoteRequest,
+    type ResultadosResponse,
+    type VoteReceipt,
+    type VoteTokenResponse,
+} from "../services/election";
+import {
+    createBiometricVerification,
+    getBiometricVerificationStatus,
+    getVerificationProvider,
+    getVerificationSessionId,
+    getVerificationUrl,
+    type BiometricInitResponse,
+    type BiometricStatusResponse,
+} from "../services/identityVerification";
 
 const RESULT_POLL_INTERVAL_MS = 8_000;
 const BIOMETRIC_POLL_INTERVAL_MS = 4_000;
@@ -126,14 +111,14 @@ export default function VotarPage() {
         "Iniciá la verificación biométrica para habilitar tu boleta.",
     );
     const biometricPollingRef = useRef<number | null>(null);
-    const veriffFrameRef = useRef<VeriffFrameController | null>(null);
+    const verificationFrameRef = useRef<IdentityFrameController | null>(null);
     const tokenGenerationLockRef = useRef(false);
 
     useEffect(() => {
         return () => {
             if (biometricPollingRef.current)
                 window.clearInterval(biometricPollingRef.current);
-            veriffFrameRef.current?.close();
+            verificationFrameRef.current?.close();
         };
     }, []);
 
@@ -153,16 +138,7 @@ export default function VotarPage() {
 
         async function fetchResultados() {
             try {
-                const res = await fetch("/api/resultados", {
-                    cache: "no-store",
-                });
-                const payload = (await res.json()) as ResultadosResponse & {
-                    error?: string;
-                };
-                if (!res.ok)
-                    throw new Error(
-                        payload.error ?? "No se pudieron leer los resultados",
-                    );
+                const payload = await getResultados();
                 if (isMounted) startTransition(() => setResultados(payload));
             } catch (error) {
                 if (isMounted)
@@ -190,27 +166,41 @@ export default function VotarPage() {
             return;
 
         async function loadCurrentAttempt() {
+            const pendingVerification = loadPendingBiometricVerification();
             try {
-                const res = await fetch("/api/verificar-biometria", {
-                    cache: "no-store",
-                });
-                if (res.status === 404) return;
-                const payload =
-                    (await res.json()) as BiometricStatusResponse & {
-                        error?: string;
-                    };
-                if (!res.ok)
-                    throw new Error(
-                        payload.error ?? "No se pudo leer el estado biométrico",
-                    );
+                const payload = await getBiometricVerificationStatus();
+                if (!payload) {
+                    if (pendingVerification) {
+                        const sessionId =
+                            setBiometricAttemptFromInit(pendingVerification);
+                        setNotice("Retomando la verificación pendiente.");
+                        beginBiometricPolling(sessionId);
+                        if (getVerificationUrl(pendingVerification)) {
+                            await openVerificationFrame(pendingVerification);
+                        }
+                    }
+                    return;
+                }
                 setBiometricAttempt(payload);
                 if (payload.votoEmitido) {
+                    clearPendingBiometricVerification();
                     setNotice("Tu voto ya fue confirmado en blockchain.");
                     return;
                 }
-                if (payload.status === "PENDIENTE")
+                if (payload.status === "PENDIENTE") {
                     beginBiometricPolling(payload.veriffSessionId);
+                    if (
+                        pendingVerification &&
+                        getVerificationSessionId(pendingVerification) ===
+                            payload.veriffSessionId &&
+                        getVerificationUrl(pendingVerification)
+                    ) {
+                        setNotice("Retomando la verificación pendiente.");
+                        await openVerificationFrame(pendingVerification);
+                    }
+                }
                 if (payload.status === "APROBADO" && payload.biometricMatch) {
+                    clearPendingBiometricVerification();
                     setNotice("Biometría validada. Generando token de voto...");
                     await issueVoteToken();
                 }
@@ -233,34 +223,54 @@ export default function VotarPage() {
         }
     }
 
-    async function openVeriffFrame(veriffUrl: string) {
-        const { MESSAGES, createVeriffFrame } = await import(
-            "@veriff/incontext-sdk"
-        );
-        veriffFrameRef.current?.close();
-        veriffFrameRef.current = createVeriffFrame({
-            lang: "es",
-            onEvent(message) {
-                if (message === MESSAGES.STARTED)
-                    setNotice(
-                        "Veriff está capturando la nueva prueba de vida.",
-                    );
-                if (
-                    message === MESSAGES.SUBMITTED ||
-                    message === MESSAGES.FINISHED
-                )
-                    setNotice(
-                        "La evidencia biométrica fue enviada. Esperando respuesta del backend.",
-                    );
-                if (message === MESSAGES.CANCELED)
-                    setNotice(
-                        "La captura se cerró. Podés iniciar otra verificación.",
-                    );
+    function closeVerificationFrame() {
+        verificationFrameRef.current?.close();
+        verificationFrameRef.current = null;
+    }
+
+    function setBiometricAttemptFromInit(payload: BiometricInitResponse): string {
+        const verificationSessionId = getVerificationSessionId(payload);
+        setBiometricAttempt({
+            attemptId: payload.attemptId,
+            biometricMatch: null,
+            failureReason: null,
+            resolvedAt: null,
+            status: "PENDIENTE",
+            veriffSessionId: verificationSessionId,
+            voterEstado: session?.user.estado ?? null,
+            votoEmitido: false,
+        });
+
+        return verificationSessionId;
+    }
+
+    async function openVerificationFrame(payload: BiometricInitResponse) {
+        const verificationUrl = getVerificationUrl(payload);
+        if (!verificationUrl)
+            throw new Error("El proveedor no devolvió la URL segura de liveness");
+
+        verificationFrameRef.current?.close();
+        verificationFrameRef.current = await openIdentityVerificationFrame({
+            onCanceled() {
+                setNotice(
+                    "La captura se cerró. Podés iniciar otra verificación.",
+                );
+            },
+            onFinished() {
+                setNotice(
+                    "La evidencia biométrica fue enviada. Esperando respuesta del backend.",
+                );
             },
             onReload() {
                 window.location.reload();
             },
-            url: veriffUrl,
+            onStarted() {
+                setNotice(
+                    "El proveedor está capturando la nueva prueba de vida.",
+                );
+            },
+            provider: getVerificationProvider(payload),
+            url: verificationUrl,
         });
     }
 
@@ -277,14 +287,7 @@ export default function VotarPage() {
         setIsGeneratingToken(true);
         setErrorMessage(null);
         try {
-            const res = await fetch("/api/generar-token", { method: "POST" });
-            const payload = (await res.json()) as VoteTokenResponse & {
-                error?: string;
-            };
-            if (!res.ok)
-                throw new Error(
-                    payload.error ?? "No se pudo generar el token de voto",
-                );
+            const payload = await createVoteToken();
             setVoteToken(payload);
             setNotice("Token anónimo emitido. Ya podés seleccionar tu opción.");
         } catch (error) {
@@ -301,33 +304,33 @@ export default function VotarPage() {
 
     async function refreshBiometricAttempt(sessionId: string) {
         try {
-            const res = await fetch(
-                `/api/verificar-biometria?sessionId=${encodeURIComponent(
-                    sessionId,
-                )}&refresh=1`,
-                { cache: "no-store" },
-            );
-            const payload = (await res.json()) as BiometricStatusResponse & {
-                error?: string;
-            };
-            if (!res.ok)
+            const payload = await getBiometricVerificationStatus({
+                refresh: true,
+                sessionId,
+            });
+            if (!payload)
                 throw new Error(
-                    payload.error ??
-                        "No se pudo consultar el estado biométrico",
+                    "No existe un intento de verificación biométrica para este votante",
                 );
             setBiometricAttempt(payload);
             if (payload.votoEmitido) {
                 stopBiometricPolling();
+                closeVerificationFrame();
+                clearPendingBiometricVerification();
                 setNotice("El voto ya fue emitido para esta sesión.");
                 return;
             }
             if (payload.status === "APROBADO" && payload.biometricMatch) {
                 stopBiometricPolling();
+                closeVerificationFrame();
+                clearPendingBiometricVerification();
                 setNotice("Biometría aprobada. Generando token de voto...");
                 await issueVoteToken();
             }
             if (["RECHAZADO", "EXPIRADO", "ERROR"].includes(payload.status)) {
                 stopBiometricPolling();
+                closeVerificationFrame();
+                clearPendingBiometricVerification();
                 setErrorMessage(
                     payload.failureReason ??
                         "La verificación biométrica no pudo aprobarse. Iniciá otra sesión.",
@@ -358,37 +361,21 @@ export default function VotarPage() {
         setVoteReceipt(null);
         tokenGenerationLockRef.current = false;
         try {
-            const res = await fetch("/api/verificar-biometria", {
-                method: "POST",
-            });
-            const payload = (await res.json()) as BiometricInitResponse & {
-                error?: string;
-            };
-            if (!res.ok)
-                throw new Error(
-                    payload.error ??
-                        "No se pudo iniciar la verificación biométrica",
-                );
-            if (!payload.veriffUrl)
-                throw new Error("Veriff no devolvió la URL segura de liveness");
-            setBiometricAttempt({
-                attemptId: payload.attemptId,
-                biometricMatch: null,
-                failureReason: null,
-                resolvedAt: null,
-                status: "PENDIENTE",
-                veriffSessionId: payload.veriffSessionId,
-                voterEstado: session?.user.estado ?? null,
-                votoEmitido: false,
-            });
-            beginBiometricPolling(payload.veriffSessionId);
+            clearPendingBiometricVerification();
+            closeVerificationFrame();
+            const payload = await createBiometricVerification();
+            if (!getVerificationUrl(payload))
+                throw new Error("El proveedor no devolvió la URL segura de liveness");
+            const verificationSessionId = setBiometricAttemptFromInit(payload);
+            beginBiometricPolling(verificationSessionId);
             if (payload.sandbox) {
                 setNotice("Modo demo: biometría aprobada automáticamente.");
             } else {
+                savePendingBiometricVerification(payload);
                 setNotice(
-                    "Completá la prueba de vida en la ventana de Veriff.",
+                    "Completá la prueba de vida en la ventana segura.",
                 );
-                await openVeriffFrame(payload.veriffUrl);
+                await openVerificationFrame(payload);
             }
         } catch (error) {
             setErrorMessage(
@@ -406,30 +393,14 @@ export default function VotarPage() {
         setIsSubmittingVote(true);
         setErrorMessage(null);
         try {
-            const res = await fetch("/api/voto", {
-                body: JSON.stringify({
-                    candidatoId: selectedCandidateId,
-                    tokenFirmado: voteToken.tokenFirmado,
-                }),
-                headers: { "Content-Type": "application/json" },
-                method: "POST",
+            const payload = await submitVoteRequest({
+                candidatoId: selectedCandidateId,
+                tokenFirmado: voteToken.tokenFirmado,
             });
-            const payload = (await res.json()) as VoteReceipt & {
-                details?: string;
-                error?: string;
-            };
-            if (!res.ok)
-                throw new Error(
-                    payload.details ??
-                        payload.error ??
-                        "No se pudo emitir el voto",
-                );
             setVoteReceipt(payload);
             setNotice("El voto quedó confirmado en la blockchain.");
             setVoteToken(null);
-            await fetch("/api/verificar-biometria?refresh=1", {
-                cache: "no-store",
-            });
+            await getBiometricVerificationStatus({ refresh: true });
             router.refresh();
         } catch (error) {
             setErrorMessage(
@@ -585,7 +556,7 @@ export default function VotarPage() {
                                             }
                                             title={
                                                 livenessDisabledReason ??
-                                                "Iniciar verificación biométrica con Veriff"
+                                                "Iniciar verificación biométrica"
                                             }
                                             type="button">
                                             {isCreatingAttempt ? (

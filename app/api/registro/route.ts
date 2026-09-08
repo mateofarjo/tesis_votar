@@ -6,15 +6,10 @@ import { Prisma } from "@prisma/client";
 import prisma from "../../../lib/prisma";
 import { getClientIp, getUserAgent, normalizeString } from "../../../lib/request";
 import { consumeRateLimit } from "../../../lib/rateLimit";
-import { processVeriffAttempt } from "../../../lib/veriffWorkflow";
 import {
-  createVeriffSession,
-  createVeriffSessionSandbox,
-  getVeriffCallbackUrl,
-  isSandboxMode,
-  isVeriffConfigError,
-  sandboxBiometricHash
-} from "../../../lib/veriff";
+  getIdentityVerificationAdapter,
+} from "../../../lib/identity-verification";
+import { processIdentityVerificationAttempt } from "../../../lib/identityVerificationWorkflow";
 
 type RegistroRequestBody = {
   dateOfBirth?: string;
@@ -87,12 +82,13 @@ export async function POST(request: Request) {
   }
 
   const vendorData = dniHash;
+  const identityVerification = getIdentityVerificationAdapter();
 
-  // ── Sandbox mode: bypass Veriff and auto-approve ──────────────────────────────
-  if (isSandboxMode()) {
-    const fakeSession = createVeriffSessionSandbox();
-    const sessionId = fakeSession.verification!.id;
-    const biometricHash = sandboxBiometricHash(dniHash);
+  // ── Sandbox mode: bypass provider and auto-approve ───────────────────────────
+  if (identityVerification.isSandboxMode()) {
+    const fakeSession = identityVerification.createSandboxSession();
+    const sessionId = fakeSession.id;
+    const biometricHash = identityVerification.sandboxBiometricHash(dniHash);
     const resolvedAt = new Date();
 
     const { attempt, voter } = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -129,7 +125,12 @@ export async function POST(request: Request) {
       action: "REGISTRO_INICIADO",
       actorType: "VOTER",
       ipAddress: clientIp,
-      metadata: { dniHash, sandbox: true, veriffSessionId: sessionId },
+      metadata: {
+        dniHash,
+        identityProvider: identityVerification.provider,
+        sandbox: true,
+        sessionId
+      },
       resourceId: attempt.id,
       resourceType: "verification_attempt",
       userAgent
@@ -140,43 +141,36 @@ export async function POST(request: Request) {
         attemptId: attempt.id,
         sandbox: true,
         status: attempt.status,
+        identityProvider: identityVerification.provider,
+        verificationSessionId: sessionId,
+        verificationSessionToken: fakeSession.token,
+        verificationUrl: fakeSession.url,
         veriffSessionId: sessionId,
-        veriffSessionToken: fakeSession.verification?.sessionToken ?? null,
-        veriffUrl: fakeSession.verification?.url ?? null,
+        veriffSessionToken: fakeSession.token,
+        veriffUrl: fakeSession.url,
         voter: { estado: voter.estado, id: voter.id }
       },
       { status: 201 }
     );
   }
 
-  // ── Flujo real con Veriff ─────────────────────────────────────────────────────
+  // ── Flujo real con el proveedor de identidad ──────────────────────────────────
   try {
-    const veriffSession = await createVeriffSession({
-      verification: {
-        callback: getVeriffCallbackUrl(),
-        document: {
-          country: documentCountry,
-          number: dni,
-          type: documentType
-        },
-        person: {
-          dateOfBirth,
-          firstName,
-          idNumber: dni,
-          lastName
-        },
-        timestamp: new Date().toISOString(),
-        vendorData
-      }
+    const verificationSession = await identityVerification.createSession({
+      callbackUrl: identityVerification.getCallbackUrl(),
+      document: {
+        country: documentCountry,
+        number: dni,
+        type: documentType
+      },
+      person: {
+        dateOfBirth,
+        firstName,
+        idNumber: dni,
+        lastName
+      },
+      vendorData
     });
-
-    const verification = veriffSession.verification;
-    if (!verification?.id) {
-      return NextResponse.json(
-        { error: "Veriff no devolvio un identificador de sesion valido" },
-        { status: 502 }
-      );
-    }
 
     const attempt = await prisma.verificationAttempt.create({
       data: {
@@ -184,7 +178,7 @@ export async function POST(request: Request) {
         referenceId: vendorData,
         status: "PENDIENTE",
         type: "REGISTRO",
-        veriffSessionId: verification.id
+        veriffSessionId: verificationSession.id
       },
       select: {
         id: true,
@@ -200,7 +194,8 @@ export async function POST(request: Request) {
       metadata: {
         dniHash,
         flow: "REGISTRO",
-        veriffSessionId: verification.id
+        identityProvider: verificationSession.provider,
+        sessionId: verificationSession.id
       },
       resourceId: attempt.id,
       resourceType: "verification_attempt",
@@ -211,16 +206,20 @@ export async function POST(request: Request) {
       {
         attemptId: attempt.id,
         status: attempt.status,
-        veriffSessionId: verification.id,
-        veriffSessionToken: verification.sessionToken ?? null,
-        veriffUrl: verification.url ?? null
+        identityProvider: verificationSession.provider,
+        verificationSessionId: verificationSession.id,
+        verificationSessionToken: verificationSession.token,
+        verificationUrl: verificationSession.url,
+        veriffSessionId: verificationSession.id,
+        veriffSessionToken: verificationSession.token,
+        veriffUrl: verificationSession.url
       },
       { status: 201 }
     );
   } catch (error) {
-    console.error("No se pudo iniciar el registro en Veriff", error);
+    console.error("No se pudo iniciar el registro en el proveedor de identidad", error);
 
-    if (isVeriffConfigError(error)) {
+    if (identityVerification.isConfigError(error)) {
       return NextResponse.json(
         { error: "Servicio de validacion no disponible" },
         { status: 503 }
@@ -289,7 +288,7 @@ export async function GET(request: Request) {
 
   if (shouldRefresh && attempt.status === "PENDIENTE") {
     try {
-      await processVeriffAttempt(attempt.veriffSessionId);
+      await processIdentityVerificationAttempt(attempt.veriffSessionId);
     } catch (error) {
       console.error("No se pudo refrescar el estado del registro en Veriff", error);
     }

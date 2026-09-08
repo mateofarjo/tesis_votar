@@ -19,7 +19,7 @@ const bodyFont = IBM_Plex_Sans({
 });
 
 export const metadata: Metadata = {
-  description: "Sistema de votación electrónica descentralizado con Veriff, Prisma y Sepolia.",
+  description: "Sistema de votación electrónica descentralizado con verificación de identidad, Prisma y Sepolia.",
   title: "Vot.Ar Blockchain"
 };
 

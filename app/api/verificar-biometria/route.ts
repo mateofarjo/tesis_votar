@@ -5,15 +5,10 @@ import { createAuditLog } from "../../../lib/audit";
 import prisma from "../../../lib/prisma";
 import { getClientIp, getUserAgent } from "../../../lib/request";
 import { consumeRateLimit } from "../../../lib/rateLimit";
-import { processVeriffAttempt } from "../../../lib/veriffWorkflow";
 import {
-  createVeriffSession,
-  createVeriffSessionSandbox,
-  getVeriffCallbackUrl,
-  isSandboxMode,
-  isVeriffConfigError,
-  sandboxBiometricHash
-} from "../../../lib/veriff";
+  getIdentityVerificationAdapter,
+} from "../../../lib/identity-verification";
+import { processIdentityVerificationAttempt } from "../../../lib/identityVerificationWorkflow";
 
 export async function POST(request: Request) {
   const session = await getServerAuthSession();
@@ -60,16 +55,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const vendorData = JSON.stringify({
-    flow: "LIVENESS",
-    voterId: voter.id
-  });
+  const vendorData = voter.dniHash ?? voter.id;
+  const identityVerification = getIdentityVerificationAdapter();
 
-  // ── Sandbox mode: bypass Veriff y auto-aprobar ────────────────────────────────
-  if (isSandboxMode()) {
-    const fakeSession = createVeriffSessionSandbox();
-    const sessionId = fakeSession.verification!.id;
-    const biometricHash = sandboxBiometricHash(voter.dniHash ?? voter.id);
+  // ── Sandbox mode: bypass provider y auto-aprobar ─────────────────────────────
+  if (identityVerification.isSandboxMode()) {
+    const fakeSession = identityVerification.createSandboxSession();
+    const sessionId = fakeSession.id;
+    const biometricHash = identityVerification.sandboxBiometricHash(voter.dniHash ?? voter.id);
     const resolvedAt = new Date();
 
     const attempt = await prisma.verificationAttempt.create({
@@ -97,31 +90,24 @@ export async function POST(request: Request) {
         attemptId: attempt.id,
         sandbox: true,
         status: attempt.status,
+        identityProvider: identityVerification.provider,
+        verificationSessionId: sessionId,
+        verificationSessionToken: fakeSession.token,
+        verificationUrl: fakeSession.url,
         veriffSessionId: sessionId,
-        veriffSessionToken: fakeSession.verification?.sessionToken ?? null,
-        veriffUrl: fakeSession.verification?.url ?? null
+        veriffSessionToken: fakeSession.token,
+        veriffUrl: fakeSession.url
       },
       { status: 201 }
     );
   }
 
-  // ── Flujo real con Veriff ─────────────────────────────────────────────────────
+  // ── Flujo real con el proveedor de identidad ──────────────────────────────────
   try {
-    const veriffSession = await createVeriffSession({
-      verification: {
-        callback: getVeriffCallbackUrl(),
-        timestamp: new Date().toISOString(),
-        vendorData
-      }
+    const verificationSession = await identityVerification.createSession({
+      callbackUrl: identityVerification.getCallbackUrl(),
+      vendorData
     });
-
-    const verification = veriffSession.verification;
-    if (!verification?.id) {
-      return NextResponse.json(
-        { error: "Veriff no devolvio un identificador de sesion valido" },
-        { status: 502 }
-      );
-    }
 
     const attempt = await prisma.verificationAttempt.create({
       data: {
@@ -129,7 +115,7 @@ export async function POST(request: Request) {
         referenceId: vendorData,
         status: "PENDIENTE",
         type: "LIVENESS",
-        veriffSessionId: verification.id,
+        veriffSessionId: verificationSession.id,
         voterId: voter.id
       },
       select: {
@@ -143,9 +129,13 @@ export async function POST(request: Request) {
       {
         attemptId: attempt.id,
         status: attempt.status,
-        veriffSessionId: verification.id,
-        veriffSessionToken: verification.sessionToken ?? null,
-        veriffUrl: verification.url ?? null
+        identityProvider: verificationSession.provider,
+        verificationSessionId: verificationSession.id,
+        verificationSessionToken: verificationSession.token,
+        verificationUrl: verificationSession.url,
+        veriffSessionId: verificationSession.id,
+        veriffSessionToken: verificationSession.token,
+        veriffUrl: verificationSession.url
       },
       { status: 201 }
     );
@@ -164,7 +154,7 @@ export async function POST(request: Request) {
       voterId: voter.id
     });
 
-    if (isVeriffConfigError(error)) {
+    if (identityVerification.isConfigError(error)) {
       return NextResponse.json(
         { error: "Servicio de validacion no disponible" },
         { status: 503 }
@@ -230,9 +220,9 @@ export async function GET(request: Request) {
 
   if (shouldRefresh && attempt.status === "PENDIENTE") {
     try {
-      await processVeriffAttempt(attempt.veriffSessionId);
+      await processIdentityVerificationAttempt(attempt.veriffSessionId);
     } catch (error) {
-      console.error("No se pudo refrescar el estado biometrico desde Veriff", error);
+      console.error("No se pudo refrescar el estado biometrico desde el proveedor de identidad", error);
     }
 
     const refreshedAttempt = await prisma.verificationAttempt.findUnique({

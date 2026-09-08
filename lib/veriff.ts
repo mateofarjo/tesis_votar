@@ -8,6 +8,18 @@ type HeadersLike =
 export type VeriffSessionRequest = {
   verification: {
     callback?: string;
+    document?: {
+      country?: string;
+      number?: string;
+      type?: string;
+    };
+    endUserId?: string;
+    person?: {
+      dateOfBirth?: string;
+      firstName?: string;
+      idNumber?: string;
+      lastName?: string;
+    };
     timestamp?: string;
     vendorData?: string;
   };
@@ -160,12 +172,14 @@ export async function createVeriffSession(
   payload: VeriffSessionRequest
 ): Promise<VeriffSessionResponse> {
   const { apiKey, baseUrl } = getVeriffConfig();
+  const body = JSON.stringify(payload);
 
   const response = await fetch(`${baseUrl}/v1/sessions`, {
-    body: JSON.stringify(payload),
+    body,
     headers: {
       "Content-Type": "application/json",
-      "X-AUTH-CLIENT": apiKey
+      "X-AUTH-CLIENT": apiKey,
+      "X-HMAC-SIGNATURE": signVeriffPayload(body)
     },
     method: "POST"
   });

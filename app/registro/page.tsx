@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { startRegistration } from "@simplewebauthn/browser";
 import { startTransition, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -148,6 +149,7 @@ function AccountReadyPanel({ status }: { status: RegistroStatusResponse | null }
 export default function RegistroPage() {
   const [formState, setFormState] = useState<RegistrationFormPayload>(DEFAULT_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEnrollingPasskey, setIsEnrollingPasskey] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>("Completá tus datos y preparate para la captura.");
   const [attempt, setAttempt] = useState<RegistroInitResponse | null>(null);
@@ -248,6 +250,23 @@ export default function RegistroPage() {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "No se pudo consultar el estado del registro");
     }
+  }
+
+  async function enrollPasskey() {
+    const sessionId = attemptStatus?.veriffSessionId ?? attempt?.veriffSessionId;
+    if (!sessionId) return;
+    setIsEnrollingPasskey(true); setErrorMessage(null);
+    try {
+      const optionsResponse = await fetch("/api/passkeys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "register-options", verificationSessionId: sessionId }) });
+      const options = await optionsResponse.json();
+      if (!optionsResponse.ok) throw new Error(options.error ?? "No se pudo iniciar la passkey");
+      const response = await startRegistration({ optionsJSON: options });
+      const verifyResponse = await fetch("/api/passkeys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "register-verify", verificationSessionId: sessionId, response }) });
+      const verified = await verifyResponse.json();
+      if (!verifyResponse.ok) throw new Error(verified.error ?? "No se pudo registrar la passkey");
+      setNotice("Passkey registrada. Ya podés iniciar sesión.");
+    } catch (error) { setErrorMessage(error instanceof Error ? error.message : "No se pudo registrar la passkey"); }
+    finally { setIsEnrollingPasskey(false); }
   }
 
   function beginPolling(attemptId: string, sessionId: string) {
@@ -483,10 +502,12 @@ export default function RegistroPage() {
             </ol>
 
             {attemptStatus?.status === "APROBADO" && (
-              <Link className="cta-button mt-5" href="/login">
-                Continuar al login
-                <ArrowRight size={15} />
-              </Link>
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                <button className="cta-button" disabled={isEnrollingPasskey} onClick={() => void enrollPasskey()} type="button">
+                  <Fingerprint size={15} /> {isEnrollingPasskey ? "Registrando passkey..." : "Registrar passkey"}
+                </button>
+                <Link className="secondary-button" href="/login">Continuar al login <ArrowRight size={15} /></Link>
+              </div>
             )}
           </section>
 

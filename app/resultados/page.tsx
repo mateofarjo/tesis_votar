@@ -14,14 +14,15 @@ import {
 } from "lucide-react";
 import { AnimatedNumber } from "../components/ui/animated-number";
 
-type ResultadoCandidato = { id: number; nombre: string; votos: number };
+type ResultadoCandidato = { id: number; nombre: string; votos: number | null };
 type ResultadosResponse = {
   candidatos: ResultadoCandidato[];
   contractAddress: string;
   estadoUrna: "CERRADA" | "ABIERTA" | "FINALIZADA";
   fechaApertura: string | null;
   fechaCierre: string | null;
-  totalVotos: number;
+  resultadosPublicos: boolean;
+  totalVotos: number | null;
   updatedAt: string;
 };
 
@@ -41,7 +42,7 @@ function UrnaStatusBadge({ estado }: { estado: ResultadosResponse["estadoUrna"] 
     return (
       <span className="live-badge">
         <span className="h-2 w-2 rounded-full bg-emerald-500 animate-live-pulse" />
-        En vivo · Abierta
+        Urna abierta
       </span>
     );
   if (estado === "FINALIZADA")
@@ -80,13 +81,15 @@ export default function ResultadosPage() {
     return () => { isMounted = false; window.clearInterval(id); };
   }, []);
 
-  const totalVotes = data?.totalVotos ?? 0;
+  const resultadosPublicos = data?.resultadosPublicos === true;
+  const totalVotes = resultadosPublicos ? (data?.totalVotos ?? 0) : 0;
 
-  /* Find winner (only show if urna is FINALIZADA or there's a clear lead) */
-  const sortedCandidates = data
-    ? [...data.candidatos].sort((a, b) => b.votos - a.votos)
+  const sortedCandidates = resultadosPublicos
+    ? data!.candidatos
+        .filter((candidate): candidate is ResultadoCandidato & { votos: number } => candidate.votos !== null)
+        .sort((a, b) => b.votos - a.votos)
     : [];
-  const winner = data?.estadoUrna === "FINALIZADA" && sortedCandidates[0]?.votos > 0
+  const winner = resultadosPublicos && sortedCandidates[0]?.votos > 0
     ? sortedCandidates[0]
     : null;
 
@@ -99,10 +102,9 @@ export default function ResultadosPage() {
           <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div className="space-y-3">
               <span className="eyebrow">Escrutinio público</span>
-              <h1 className="section-title">Resultados en tiempo real desde Sepolia</h1>
+              <h1 className="section-title">Escrutinio público verificable</h1>
               <p className="max-w-xl text-sm text-brand-ink/65 sm:text-base">
-                La identidad nunca llega a cadena. Solo se contabilizan tokens anónimos
-                validados por la clave pública oficial.
+                Los totales y porcentajes se publican únicamente cuando la urna queda finalizada.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -119,10 +121,12 @@ export default function ResultadosPage() {
           {/* Metrics row */}
           <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="metric-card">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-teal">Total votos</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-teal">Escrutinio</p>
               {isLoading
                 ? <div className="skeleton mt-3 h-10 w-24" />
-                : <AnimatedNumber value={totalVotes} className="mt-3 text-4xl font-semibold text-brand-ink" />
+                : resultadosPublicos
+                  ? <AnimatedNumber value={totalVotes} className="mt-3 text-4xl font-semibold text-brand-ink" />
+                  : <p className="mt-3 text-sm font-medium text-brand-ink">Reservado hasta el cierre</p>
               }
             </div>
             <div className="metric-card">
@@ -162,6 +166,16 @@ export default function ResultadosPage() {
               <div className="alert-error mt-5">
                 <AlertCircle size={15} className="mt-0.5 flex-shrink-0" />
                 <span>{errorMessage}</span>
+              </div>
+            )}
+
+            {!isLoading && !resultadosPublicos && (
+              <div className="mt-5 rounded-[22px] border border-brand-teal/20 bg-brand-teal/5 px-6 py-8 text-center">
+                <Clock size={22} className="mx-auto text-brand-teal" />
+                <h3 className="mt-3 text-lg font-semibold text-brand-ink">Resultados reservados</h3>
+                <p className="mx-auto mt-2 max-w-md text-sm text-brand-ink/65">
+                  La urna aún no está finalizada. Los conteos, porcentajes y el ganador se publicarán tras el cierre.
+                </p>
               </div>
             )}
 
@@ -225,7 +239,7 @@ export default function ResultadosPage() {
                 );
               })}
 
-              {!isLoading && (data?.candidatos.length ?? 0) === 0 && (
+              {!isLoading && resultadosPublicos && (data?.candidatos.length ?? 0) === 0 && (
                 <div className="rounded-[22px] border border-brand-line/60 bg-white/75 px-6 py-8 text-center text-sm text-brand-ink/55">
                   El contrato aún no expone candidatos o no se sincronizó el despliegue.
                 </div>

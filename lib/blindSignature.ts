@@ -1,4 +1,4 @@
-import { createHash, createPrivateKey, createPublicKey, randomUUID } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
 
 import BlindSignature = require("blind-signatures");
 import { ethers } from "ethers";
@@ -6,6 +6,7 @@ import { BigInteger } from "jsbn";
 
 const RSA_KEY_SIZE_BITS = 2048;
 const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+const VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v1";
 
 type RsaJwk = {
   d?: string;
@@ -146,10 +147,6 @@ function decimalToHex(decimalValue: string, lengthBytes?: number): string {
   return `0x${hex}`;
 }
 
-function sha256Hex(input: string): string {
-  return createHash("sha256").update(input, "utf8").digest("hex");
-}
-
 function assertRsaPublicJwk(jwk: RsaJwk): asserts jwk is RsaJwk & { e: string; n: string } {
   if (jwk.kty !== "RSA" || !jwk.n || !jwk.e) {
     throw new Error("RSA_PUBLIC_KEY_PEM debe ser una clave publica RSA valida");
@@ -283,11 +280,23 @@ export function verifyUnblindedToken(message: string, signature: string): boolea
 }
 
 export function getVoteTokenDigestHex(token: string): string {
-  return `0x${sha256Hex(token)}`;
+  const normalized = token.trim().toLowerCase();
+  if (!/^0x[0-9a-f]{64}$/.test(normalized)) {
+    throw new Error("El token de voto debe ser hexadecimal canonico de 32 bytes");
+  }
+
+  return `0x${createHash("sha256")
+    .update(VOTE_CREDENTIAL_DOMAIN, "utf8")
+    .update(Buffer.from(normalized.slice(2), "hex"))
+    .digest("hex")}`;
 }
 
 export function generateVoteToken(): string {
-  return randomUUID();
+  return `0x${randomBytes(32).toString("hex")}`;
+}
+
+function voteTokenMessageDecimal(token: string): string {
+  return BigInt(getVoteTokenDigestHex(token)).toString(10);
 }
 
 export function blindVoteToken(token: string): BlindedVoteToken {
@@ -295,14 +304,16 @@ export function blindVoteToken(token: string): BlindedVoteToken {
   const { blinded, r } = BlindSignature.blind({
     E: publicKey.E,
     N: publicKey.N,
-    message: token
+    message: voteTokenMessageDecimal(token)
   });
 
   return {
     blindedToken: asDecimalString(blinded),
     blindingFactor: asDecimalString(r),
     token,
-    tokenDigestHex: getVoteTokenDigestHex(token)
+    // Nombre legado: el valor enviado al contrato es el token canónico; el
+    // digest separado por dominio se calcula únicamente para firmar/verificar.
+    tokenDigestHex: token
   };
 }
 
@@ -323,12 +334,12 @@ export function unblindSignedToken(
   });
 
   const signatureDecimal = asDecimalString(unblinded);
-  if (!verifyUnblindedToken(token, signatureDecimal)) {
+  if (!verifyUnblindedToken(voteTokenMessageDecimal(token), signatureDecimal)) {
     throw new Error("La firma ciega RSA no pudo validarse localmente");
   }
 
   const signatureHex = decimalToHex(signatureDecimal, publicKey.modulusLengthBytes);
-  const tokenDigestHex = getVoteTokenDigestHex(token);
+  const tokenDigestHex = token;
 
   return {
     encodedTokenFirmado: encodeSignedVoteTokenForContract(tokenDigestHex, signatureHex),

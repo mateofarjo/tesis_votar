@@ -13,6 +13,9 @@ export type IdentitySessionRequest = {
     idNumber: string;
     lastName: string;
   };
+  // Identidad estable emitida durante el registro, usada por el proveedor al
+  // comparar la sesión de liveness con el registro previo.
+  referenceIdentityId?: string;
   vendorData: string;
 };
 
@@ -32,7 +35,10 @@ export type IdentityDecisionStatus =
 export type IdentityDecision = {
   attemptId?: string | null;
   biometricSource?: unknown;
-  matchedVendorData?: string | null;
+  biometricScore?: number | null;
+  // Evidencia de la identidad/sesión de registro contra la que el proveedor
+  // realizó el match. vendorData no constituye evidencia biométrica.
+  matchedIdentityReference?: string | null;
   personId?: string | null;
   provider: IdentityProviderId;
   providerStatus?: string | null;

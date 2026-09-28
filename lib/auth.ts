@@ -8,6 +8,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { hashDni } from "./biometricHash";
 import { createAuditLog } from "./audit";
 import prisma from "./prisma";
+import { consumeLoginTicket } from "./webauthn";
 
 export type AuthRole = "VOTANTE" | "AUTORIDAD";
 
@@ -16,6 +17,7 @@ type AppUser = {
   id: string;
   name: string;
   role: AuthRole;
+  sessionVersion?: number;
   voterId?: string;
 };
 
@@ -106,8 +108,8 @@ async function authorizeVoter(
   credentials: Record<string, string | undefined>,
   requestHeaders: Record<string, string | string[] | undefined>
 ): Promise<AppUser | null> {
-  const dni = normalizeString(credentials.dni);
-  if (!dni) {
+  const ticket = normalizeString(credentials.passkeyTicket);
+  if (!ticket) {
     await createAuditLog({
       action: "LOGIN_FALLIDO",
       actorType: "VOTER",
@@ -118,16 +120,7 @@ async function authorizeVoter(
     return null;
   }
 
-  const dniHash = hashDni(dni);
-  const voter = await prisma.voter.findUnique({
-    select: {
-      estado: true,
-      id: true
-    },
-    where: {
-      dniHash
-    }
-  });
+  const voter = await consumeLoginTicket(ticket);
 
   if (!voter) {
     await createAuditLog({
@@ -136,7 +129,7 @@ async function authorizeVoter(
       ipAddress: getRequestIp(requestHeaders),
       metadata: {
         attemptedRole: "VOTANTE",
-        dniHash
+        reason: "passkey_ticket_invalid"
       },
       userAgent: getHeaderValue(requestHeaders, "user-agent")
     });
@@ -149,7 +142,7 @@ async function authorizeVoter(
     ipAddress: getRequestIp(requestHeaders),
     metadata: {
       attemptedRole: "VOTANTE",
-      dniHash
+      passkey: true
     },
     userAgent: getHeaderValue(requestHeaders, "user-agent"),
     voterId: voter.id
@@ -158,8 +151,9 @@ async function authorizeVoter(
   return {
     estado: voter.estado,
     id: voter.id,
-    name: `Votante ${dniHash.slice(0, 8)}`,
+    name: `Votante ${voter.id.slice(0, 8)}`,
     role: "VOTANTE",
+    sessionVersion: voter.sessionVersion,
     voterId: voter.id
   };
 }
@@ -186,6 +180,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.role = user.role;
         token.estado = user.estado;
+        token.sessionVersion = user.sessionVersion;
         token.voterId = user.voterId;
       }
 
@@ -198,6 +193,7 @@ export const authOptions: NextAuthOptions = {
           ...session.user,
           id: token.sub ?? "",
           role: token.role as AuthRole,
+          sessionVersion: token.sessionVersion as number | undefined,
           estado: token.estado as Estado | undefined,
           voterId: token.voterId as string | undefined
         }
@@ -215,6 +211,7 @@ export const authOptions: NextAuthOptions = {
           placeholder: "30111222",
           type: "text"
         },
+        passkeyTicket: { label: "Passkey ticket", type: "text" },
         password: {
           label: "Password",
           type: "password"
@@ -244,7 +241,27 @@ export const authOptions: NextAuthOptions = {
 };
 
 export async function getServerAuthSession() {
-  return getServerSession(authOptions);
+  const session = await getServerSession(authOptions);
+  if (session?.user.role !== "VOTANTE" || !session.user.voterId) {
+    return session;
+  }
+
+  const voter = await prisma.voter.findUnique({
+    select: { sessionVersion: true },
+    where: { id: session.user.voterId },
+  });
+  if (!voter || voter.sessionVersion !== session.user.sessionVersion) {
+    return null;
+  }
+
+  return session;
+}
+
+export async function revokeVoterSessions(voterId: string): Promise<void> {
+  await prisma.voter.update({
+    data: { sessionVersion: { increment: 1 } },
+    where: { id: voterId },
+  });
 }
 
 export function assertRole(session: Session | null, role: AuthRole): asserts session is Session {

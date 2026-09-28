@@ -39,8 +39,11 @@ function normalizeVeriffDecision(payload: VeriffDecisionPayload): IdentityDecisi
   return {
     attemptId: payload.verification?.attemptId ?? null,
     biometricSource,
-    matchedVendorData:
-      payload.verification?.biometricAuthentication?.matchedSessionVendorData ?? null,
+    biometricScore: null,
+    matchedIdentityReference:
+      payload.verification?.biometricAuthentication?.matchedSessionId ??
+      payload.verification?.biometricAuthentication?.matchedSessionEndUserId ??
+      null,
     personId: payload.verification?.id ?? null,
     provider: "veriff",
     providerStatus,
@@ -72,6 +75,7 @@ export const veriffAdapter: IdentityVerificationAdapter = {
       verification: {
         callback: request.callbackUrl,
         document: request.document,
+        endUserId: request.referenceIdentityId,
         person: request.person,
         timestamp: new Date().toISOString(),
         vendorData: request.vendorData,

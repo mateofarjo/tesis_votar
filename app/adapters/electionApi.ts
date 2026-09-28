@@ -9,6 +9,7 @@ export function adaptResultados(payload: ResultadosResponse): ResultadosResponse
     candidatos: payload.candidatos,
     contractAddress: payload.contractAddress,
     estadoUrna: payload.estadoUrna,
+    resultadosPublicos: payload.resultadosPublicos,
     totalVotos: payload.totalVotos,
     updatedAt: payload.updatedAt,
   };

@@ -4,14 +4,22 @@ import {
   adaptVoteToken,
 } from "../adapters/electionApi";
 import { readApiJson } from "../adapters/apiResponse";
+import {
+  clearStoredVoteCredential,
+  createAnonymousVoteCredential,
+  getStoredVoteCredential,
+  type BlindSignaturePublicKeyResponse,
+  type SignedBlindVoteTokenResponse,
+} from "./blindVoteToken";
 
-export type ResultadoCandidato = { id: number; nombre: string; votos: number };
+export type ResultadoCandidato = { id: number; nombre: string; votos: number | null };
 
 export type ResultadosResponse = {
   candidatos: ResultadoCandidato[];
   contractAddress: string;
   estadoUrna: "ABIERTA" | "CERRADA" | "FINALIZADA";
-  totalVotos: number;
+  resultadosPublicos: boolean;
+  totalVotos: number | null;
   updatedAt: string;
 };
 
@@ -41,13 +49,35 @@ export async function getResultados(): Promise<ResultadosResponse> {
 }
 
 export async function createVoteToken(): Promise<VoteTokenResponse> {
-  const response = await fetch("/api/generar-token", { method: "POST" });
+  const storedCredential = getStoredVoteCredential();
+  if (storedCredential) {
+    return storedCredential;
+  }
+
+  const publicKeyResponse = await fetch("/api/generar-token", {
+    cache: "no-store",
+  });
+  const publicKey = await readApiJson<BlindSignaturePublicKeyResponse>(
+    publicKeyResponse,
+    "No se pudo obtener la clave publica de voto",
+  );
+
+  const preparedCredential = await createAnonymousVoteCredential(publicKey);
+  const signResponse = await fetch("/api/generar-token", {
+    body: JSON.stringify({
+      blindedToken: preparedCredential.blindedToken,
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  const signedBlindToken = await readApiJson<SignedBlindVoteTokenResponse>(
+    signResponse,
+    "No se pudo generar el token de voto",
+  );
 
   return adaptVoteToken(
-    await readApiJson<VoteTokenResponse>(
-      response,
-      "No se pudo generar el token de voto",
-    ),
+    preparedCredential.unblindSignedToken(signedBlindToken),
   );
 }
 
@@ -67,7 +97,9 @@ export async function submitVote({
     method: "POST",
   });
 
-  return adaptVoteReceipt(
+  const receipt = adaptVoteReceipt(
     await readApiJson<VoteReceipt>(response, "No se pudo emitir el voto"),
   );
+  clearStoredVoteCredential();
+  return receipt;
 }

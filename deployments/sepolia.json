@@ -1,12 +1,12 @@
 {
   "network": "sepolia",
   "contractName": "VotacionContract",
-  "contractAddress": "0xA38Bb2E48a035efB535fAB4eB3a4AB3446761Aa3",
+  "contractAddress": "0xCa54CeE5A667098Faef36A165675848E19ce60E9",
   "deployer": "0x84B6a0057a0Ee9A0A5eC6430e66CE813a883120B",
   "chainId": 11155111,
-  "transactionHash": "0x6df076a79cdbdad48329a13fd41880e2370b4ae8e1bf3eba1e9f821d058184e5",
-  "blockNumber": 11165904,
-  "deployedAt": "2026-06-29T13:57:34.074Z",
+  "transactionHash": "0xf4a889b4e6a392932feabc5965a5194033122df86d5a944752a6f9fe57be372c",
+  "blockNumber": 11780169,
+  "deployedAt": "2026-09-25T15:38:49.664Z",
   "candidates": [
     "Lista A",
     "Lista B",

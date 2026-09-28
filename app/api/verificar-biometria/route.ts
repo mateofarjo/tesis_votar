@@ -37,6 +37,7 @@ export async function POST(request: Request) {
       dniHash: true,
       estado: true,
       id: true,
+      veriffPersonId: true,
       votoEmitido: true
     },
     where: {
@@ -106,6 +107,7 @@ export async function POST(request: Request) {
   try {
     const verificationSession = await identityVerification.createSession({
       callbackUrl: identityVerification.getCallbackUrl(),
+      referenceIdentityId: voter.veriffPersonId ?? undefined,
       vendorData
     });
 

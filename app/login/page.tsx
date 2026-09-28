@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { signIn, useSession } from "next-auth/react";
+import { startAuthentication } from "@simplewebauthn/browser";
 import { AlertCircle, Eye, EyeOff, Fingerprint, Lock, LogIn, ShieldCheck, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -34,13 +35,19 @@ export default function LoginPage() {
     setIsSubmitting(true);
     setErrorMessage(null);
 
-    const result = await signIn("credentials", {
-      dni,
-      password,
-      redirect: false,
-      role: mode,
-      username
-    });
+    let result;
+    if (mode === "VOTANTE") {
+      try {
+        const optionsResponse = await fetch("/api/passkeys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "auth-options", dni }) });
+        const options = await optionsResponse.json();
+        if (!optionsResponse.ok) throw new Error(options.error ?? "No hay passkey registrada");
+        const response = await startAuthentication({ optionsJSON: options });
+        const verifyResponse = await fetch("/api/passkeys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "auth-verify", response }) });
+        const verified = await verifyResponse.json();
+        if (!verifyResponse.ok) throw new Error(verified.error ?? "No se pudo verificar la passkey");
+        result = await signIn("credentials", { passkeyTicket: verified.ticket, redirect: false, role: mode });
+      } catch (error) { setIsSubmitting(false); setErrorMessage(error instanceof Error ? error.message : "No se pudo usar la passkey"); return; }
+    } else result = await signIn("credentials", { password, redirect: false, role: mode, username });
 
     setIsSubmitting(false);
 

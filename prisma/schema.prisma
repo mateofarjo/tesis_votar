@@ -13,6 +13,7 @@ model Voter {
   /// SHA-256 de los vectores biometricos provistos por Veriff.
   biometricHash        String                @unique @map("biometric_hash") @db.VarChar(64)
   estado               Estado                @default(REGISTRADO)
+  sessionVersion       Int                   @default(0) @map("session_version")
   votoEmitido          Boolean               @default(false) @map("voto_emitido")
   /// Identificador externo opcional devuelto por Veriff.
   veriffPersonId       String?               @unique @map("veriff_person_id")
@@ -23,10 +24,38 @@ model Voter {
   auditLogs            AuditLog[]
   verificationAttempts VerificationAttempt[]
   voteTokens           VoteToken[]
+  passkeys             Passkey[]
+  webauthnChallenges   WebAuthnChallenge[]
 
   @@index([estado])
   @@index([votoEmitido])
   @@map("voters")
+}
+
+model Passkey {
+  id            String   @id @default(cuid())
+  credentialId  String   @unique @map("credential_id")
+  publicKey     Bytes    @map("public_key")
+  counter       BigInt   @default(0)
+  transports    String[]
+  createdAt     DateTime @default(now()) @map("created_at")
+  lastUsedAt    DateTime? @map("last_used_at")
+  voterId       String   @map("voter_id")
+  voter         Voter    @relation(fields: [voterId], references: [id], onDelete: Cascade)
+  @@index([voterId])
+  @@map("passkeys")
+}
+
+model WebAuthnChallenge {
+  id        String   @id @default(cuid())
+  challenge String   @unique
+  purpose   String
+  expiresAt DateTime @map("expires_at")
+  voterId   String   @map("voter_id")
+  voter     Voter    @relation(fields: [voterId], references: [id], onDelete: Cascade)
+  @@index([voterId, purpose])
+  @@index([expiresAt])
+  @@map("webauthn_challenges")
 }
 
 model VerificationAttempt {
@@ -41,7 +70,11 @@ model VerificationAttempt {
   dniHash         String?            @map("dni_hash") @db.VarChar(64)
   biometricHash   String?            @map("biometric_hash") @db.VarChar(64)
   biometricMatch  Boolean?           @map("biometric_match")
+  biometricScore  Float?             @map("biometric_score")
   failureReason   String?            @map("failure_reason")
+  identityProvider String?           @map("identity_provider")
+  providerDecisionHash String?       @map("provider_decision_hash") @db.VarChar(64)
+  webhookClaimedAt DateTime?         @map("webhook_claimed_at")
   initiatedAt     DateTime           @default(now()) @map("initiated_at")
   resolvedAt      DateTime?          @map("resolved_at")
   createdAt       DateTime           @default(now()) @map("created_at")
@@ -59,10 +92,10 @@ model VoteToken {
   id                    String               @id @default(cuid())
   voterId               String               @map("voter_id")
   verificationAttemptId String?              @map("verification_attempt_id")
-  /// SHA-256 del UUID de voto. Permite reconciliar el evento on-chain sin guardar el token en claro.
-  tokenHash             String               @unique @map("token_hash") @db.VarChar(64)
-  /// SHA-256 del token firmado devuelto al cliente. Evita almacenar la firma en claro y reduce correlacion.
-  signedTokenHash       String               @unique @map("signed_token_hash") @db.VarChar(64)
+  /// Campo legado. En el flujo anonimo guarda el hash del token cegado, no el tokenHash on-chain.
+  tokenHash             String?              @unique @map("token_hash") @db.VarChar(64)
+  /// Campo legado. En el flujo anonimo guarda el hash de la firma cegada, no el token firmado final.
+  signedTokenHash       String?              @unique @map("signed_token_hash") @db.VarChar(64)
   status                VoteTokenStatus      @default(EMITIDO)
   expiresAt             DateTime             @map("expires_at")
   usedAt                DateTime?            @map("used_at")

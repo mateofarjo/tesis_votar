@@ -33,12 +33,21 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [estadoUrna, candidatos, totalVotos, fechas] = await Promise.all([
+    const [estadoUrna, fechas] = await Promise.all([
       getEstadoActualUrna(),
-      getResultadosContrato(),
-      getTotalVotosEmitidos(),
       getFechasUrna()
     ]);
+
+    // Los nombres se mantienen disponibles para construir la boleta, pero los
+    // conteos nunca salen de esta API hasta el cierre definitivo de la urna.
+    const candidatosContrato = await getResultadosContrato();
+    const resultadosPublicos = estadoUrna === "FINALIZADA";
+    const candidatos = candidatosContrato.map((candidato) => ({
+      id: candidato.id,
+      nombre: candidato.nombre,
+      votos: resultadosPublicos ? candidato.votos : null
+    }));
+    const totalVotos = resultadosPublicos ? await getTotalVotosEmitidos() : null;
 
     return NextResponse.json(
       {
@@ -47,6 +56,7 @@ export async function GET(request: Request) {
         estadoUrna,
         fechaApertura: serializeUnixTimestamp(fechas.fechaApertura),
         fechaCierre: serializeUnixTimestamp(fechas.fechaCierre),
+        resultadosPublicos,
         totalVotos,
         updatedAt: new Date().toISOString()
       },

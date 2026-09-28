@@ -47,16 +47,6 @@ import {
 const RESULT_POLL_INTERVAL_MS = 8_000;
 const BIOMETRIC_POLL_INTERVAL_MS = 4_000;
 
-function formatDateTime(value: string | null) {
-    if (!value) return "Sin dato";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "Sin dato";
-    return new Intl.DateTimeFormat("es-AR", {
-        dateStyle: "medium",
-        timeStyle: "short",
-    }).format(date);
-}
-
 function BiometricStatusLabel({
     status,
 }: {
@@ -794,6 +784,9 @@ export default function VotarPage() {
                                 Tu voto quedó registrado de forma inmutable en
                                 la blockchain.
                             </p>
+                            <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                No compartas esta transacción: puede revelar tu selección. Este prototipo no ofrece resistencia a la coacción.
+                            </p>
                             <dl className="mt-4 grid gap-2 text-sm">
                                 <div className="rounded-2xl border border-emerald-200 bg-white/70 px-4 py-3">
                                     <dt className="text-xs text-brand-teal">
@@ -830,21 +823,11 @@ export default function VotarPage() {
                             <dl className="mt-4 grid gap-2 text-sm">
                                 <div className="info-row">
                                     <dt className="text-xs text-brand-teal">
-                                        Hash del token
-                                    </dt>
-                                    <dd className="max-w-[10rem] truncate font-mono text-xs">
-                                        {voteToken?.tokenDigestHex ?? "—"}
-                                    </dd>
-                                </div>
-                                <div className="info-row">
-                                    <dt className="text-xs text-brand-teal">
-                                        Expira
+                                        Estado
                                     </dt>
                                     <dd className="text-xs">
                                         {voteToken
-                                            ? formatDateTime(
-                                                  voteToken.expiresAt,
-                                              )
+                                            ? "Activa en esta sesión"
                                             : "Sin token"}
                                     </dd>
                                 </div>

@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { getServerAuthSession } from "../../../lib/auth";
 import { createAuditLog } from "../../../lib/audit";
 import {
-  issueBlindSignedVoteToken
+  getBlindSignaturePublicKey,
+  signBlindedToken
 } from "../../../lib/blindSignature";
 import { Prisma } from "@prisma/client";
 import prisma from "../../../lib/prisma";
@@ -26,10 +27,48 @@ function getVerificationWindowMs(): number {
   return Math.max(envValue, 1) * 60_000;
 }
 
+type GenerateTokenRequestBody = {
+  blindedToken?: string;
+};
+
+function normalizeBlindedToken(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const normalized = value.trim();
+  return /^\d+$/.test(normalized) ? normalized : "";
+}
+
+export async function GET() {
+  const publicKey = getBlindSignaturePublicKey();
+
+  return NextResponse.json({
+    E: publicKey.E,
+    N: publicKey.N,
+    modulusLengthBytes: publicKey.modulusLengthBytes
+  });
+}
+
 export async function POST(request: Request) {
   const session = await getServerAuthSession();
   if (!session?.user || session.user.role !== "VOTANTE" || !session.user.voterId) {
     return NextResponse.json({ error: "Sesion no autorizada" }, { status: 401 });
+  }
+
+  let body: GenerateTokenRequestBody;
+  try {
+    body = (await request.json()) as GenerateTokenRequestBody;
+  } catch {
+    return NextResponse.json({ error: "El cuerpo JSON es invalido" }, { status: 400 });
+  }
+
+  const blindedToken = normalizeBlindedToken(body.blindedToken);
+  if (!blindedToken) {
+    return NextResponse.json(
+      { error: "blindedToken es obligatorio y debe ser decimal" },
+      { status: 400 }
+    );
   }
 
   const clientIp = getClientIp(request.headers) ?? "unknown";
@@ -99,32 +138,38 @@ export async function POST(request: Request) {
     );
   }
 
+  const existingCredential = await prisma.voteToken.findFirst({
+    select: {
+      id: true,
+      status: true
+    },
+    where: {
+      status: {
+        in: ["EMITIDO", "CONSUMIDO"]
+      },
+      voterId: voter.id
+    }
+  });
+
+  if (existingCredential) {
+    return NextResponse.json(
+      { error: "Ya se emitio una credencial anonima para este votante" },
+      { status: 409 }
+    );
+  }
+
   const expiresAt = new Date(Date.now() + getTokenTtlMs());
-  const issuedToken = issueBlindSignedVoteToken();
-  const tokenHash = issuedToken.tokenDigestHex.replace(/^0x/, "").toLowerCase();
-  const signedTokenHash = sha256Hex(issuedToken.encodedTokenFirmado);
+  const signedBlindedToken = signBlindedToken(blindedToken);
+  const blindedTokenHash = sha256Hex(`blinded:${blindedToken}`);
+  const signedBlindedTokenHash = sha256Hex(`signed-blinded:${signedBlindedToken}`);
 
   const voteToken = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    await tx.voteToken.updateMany({
-      data: {
-        revokedAt: new Date(),
-        status: "REVOCADO"
-      },
-      where: {
-        expiresAt: {
-          gt: new Date()
-        },
-        status: "EMITIDO",
-        voterId: voter.id
-      }
-    });
-
     return tx.voteToken.create({
       data: {
         expiresAt,
-        signedTokenHash,
+        signedTokenHash: signedBlindedTokenHash,
         status: "EMITIDO",
-        tokenHash,
+        tokenHash: blindedTokenHash,
         verificationAttemptId: latestApprovedAttempt.id,
         voterId: voter.id
       },
@@ -140,6 +185,7 @@ export async function POST(request: Request) {
     ipAddress: clientIp,
     metadata: {
       expiresAt: expiresAt.toISOString(),
+      privacy: "blind_signature_final_token_unknown_to_server",
       verificationAttemptId: latestApprovedAttempt.id
     },
     resourceId: voteToken.id,
@@ -151,7 +197,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     expiresAt: expiresAt.toISOString(),
-    tokenDigestHex: issuedToken.tokenDigestHex,
-    tokenFirmado: issuedToken.encodedTokenFirmado
+    signedBlindedToken
   });
 }

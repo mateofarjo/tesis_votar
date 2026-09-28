@@ -186,8 +186,8 @@ function normalizeDiditDecision(payload: DiditPayload): IdentityDecision {
       session_id: getString(payload, "session_id") ?? getString(decision, "session_id"),
       status,
     },
-    matchedVendorData:
-      getString(payload, "vendor_data") ?? getString(decision, "vendor_data"),
+    biometricScore: null,
+    matchedIdentityReference: null,
     personId:
       getString(payload, "user_id") ??
       getString(decision, "user_id") ??

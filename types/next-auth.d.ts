@@ -10,6 +10,7 @@ declare module "next-auth" {
       estado?: Estado;
       id: string;
       role: AuthRole;
+      sessionVersion?: number;
       voterId?: string;
     };
   }
@@ -17,6 +18,7 @@ declare module "next-auth" {
   interface User extends DefaultUser {
     estado?: Estado;
     role: AuthRole;
+    sessionVersion?: number;
     voterId?: string;
   }
 }
@@ -25,6 +27,7 @@ declare module "next-auth/jwt" {
   interface JWT extends DefaultJWT {
     estado?: Estado;
     role?: AuthRole;
+    sessionVersion?: number;
     voterId?: string;
   }
 }

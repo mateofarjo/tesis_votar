@@ -5,14 +5,11 @@ import type {
   VerificationType,
   Voter,
 } from "@prisma/client";
+import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 
 import { createAuditLog } from "./audit";
-import {
-  compareSha256Hashes,
-  hashBiometricVector,
-  type JsonLike,
-} from "./biometricHash";
+import { hashBiometricVector, type JsonLike } from "./biometricHash";
 import {
   getIdentityVerificationAdapter,
   type IdentityDecision,
@@ -23,10 +20,16 @@ type AttemptWithVoter = VerificationAttempt & {
   voter: Voter | null;
 };
 
+const WEBHOOK_CLAIM_TTL_MS = 5 * 60_000;
+
+function getDecisionHash(decision: IdentityDecision): string {
+  return createHash("sha256").update(JSON.stringify(decision.raw)).digest("hex");
+}
+
 export type ProcessedIdentityAttemptResult =
   | {
       message: string;
-      outcome: "already_processed" | "missing_attempt";
+      outcome: "already_processed" | "already_processing" | "missing_attempt";
       verificationStatus: VerificationStatus | null;
     }
   | {
@@ -57,7 +60,10 @@ async function finalizeRejectedAttempt(
 
   await prisma.verificationAttempt.update({
     data: {
+      biometricScore: decision.biometricScore ?? null,
       failureReason: reason,
+      identityProvider: decision.provider,
+      providerDecisionHash: getDecisionHash(decision),
       resolvedAt,
       status: verificationStatus,
       veriffAttemptId: decision.attemptId ?? attempt.veriffAttemptId,
@@ -136,9 +142,12 @@ async function processRegistrationApproval(
       ) {
         await tx.verificationAttempt.update({
           data: {
+            biometricScore: decision.biometricScore ?? null,
             biometricHash,
             failureReason:
               "La biometria ya se encuentra asociada a otro votante",
+            identityProvider: decision.provider,
+            providerDecisionHash: getDecisionHash(decision),
             resolvedAt,
             status: "RECHAZADO",
             veriffAttemptId: decision.attemptId ?? attempt.veriffAttemptId,
@@ -175,9 +184,12 @@ async function processRegistrationApproval(
 
       await tx.verificationAttempt.update({
         data: {
+          biometricScore: decision.biometricScore ?? null,
           biometricHash,
           biometricMatch: null,
           failureReason: null,
+          identityProvider: decision.provider,
+          providerDecisionHash: getDecisionHash(decision),
           resolvedAt,
           status: "APROBADO",
           veriffAttemptId: decision.attemptId ?? attempt.veriffAttemptId,
@@ -246,12 +258,12 @@ async function processLivenessApproval(
     );
   }
 
+  // Un hash de dos capturas no es un comparador facial. Solo se acepta el
+  // veredicto de match explícito del proveedor contra la identidad registrada.
   const biometricHash = hashBiometricVector(getBiometricSource(decision));
   const biometricMatch =
-    Boolean(
-      decision.matchedVendorData &&
-        decision.matchedVendorData === attempt.voter.dniHash,
-    ) || compareSha256Hashes(attempt.voter.biometricHash, biometricHash);
+    Boolean(decision.matchedIdentityReference) &&
+    decision.matchedIdentityReference === attempt.voter.veriffPersonId;
   const resolvedAt = new Date();
 
   const updatedVoter = biometricMatch
@@ -271,11 +283,14 @@ async function processLivenessApproval(
 
   await prisma.verificationAttempt.update({
     data: {
+      biometricScore: decision.biometricScore ?? null,
       biometricHash,
       biometricMatch,
       failureReason: biometricMatch
         ? null
-        : "La biometria no coincide con el registro",
+        : "El proveedor no confirmo una coincidencia con la identidad registrada",
+      identityProvider: decision.provider,
+      providerDecisionHash: getDecisionHash(decision),
       resolvedAt,
       status: biometricMatch ? "APROBADO" : "RECHAZADO",
       veriffAttemptId: decision.attemptId ?? attempt.veriffAttemptId,
@@ -322,16 +337,14 @@ export async function processIdentityVerificationAttempt(
   sessionId: string,
   decision?: IdentityDecision,
 ): Promise<ProcessedIdentityAttemptResult> {
-  const attempt = await prisma.verificationAttempt.findUnique({
-    include: {
-      voter: true,
-    },
+  const initialAttempt = await prisma.verificationAttempt.findUnique({
+    select: { id: true, status: true },
     where: {
       veriffSessionId: sessionId,
     },
   });
 
-  if (!attempt) {
+  if (!initialAttempt) {
     return {
       message: "No existe un intento asociado al sessionId recibido",
       outcome: "missing_attempt",
@@ -339,35 +352,74 @@ export async function processIdentityVerificationAttempt(
     };
   }
 
-  if (attempt.status !== "PENDIENTE") {
+  if (initialAttempt.status !== "PENDIENTE") {
     return {
       message: "El intento ya fue procesado previamente",
       outcome: "already_processed",
-      verificationStatus: attempt.status,
+      verificationStatus: initialAttempt.status,
     };
   }
 
-  const authoritativeDecision =
-    decision ?? (await getIdentityVerificationAdapter().getDecision(sessionId));
+  const claimedAt = new Date();
+  const reclaimBefore = new Date(claimedAt.getTime() - WEBHOOK_CLAIM_TTL_MS);
+  const claim = await prisma.verificationAttempt.updateMany({
+    data: { webhookClaimedAt: claimedAt },
+    where: {
+      id: initialAttempt.id,
+      status: "PENDIENTE",
+      OR: [
+        { webhookClaimedAt: null },
+        { webhookClaimedAt: { lt: reclaimBefore } },
+      ],
+    },
+  });
 
-  if (authoritativeDecision.status === "approved") {
-    return processApprovedAttempt(attempt, authoritativeDecision);
-  }
-
-  if (authoritativeDecision.status === "pending") {
+  if (claim.count === 0) {
     return {
-      attemptId: attempt.id,
-      message: `${authoritativeDecision.provider} todavia no emitio una decision final`,
-      outcome: "still_pending",
+      message: "El intento esta siendo procesado por otra entrega del webhook",
+      outcome: "already_processing",
       verificationStatus: "PENDIENTE",
     };
   }
 
-  const reason =
-    authoritativeDecision.reason ??
-    `${authoritativeDecision.provider} no aprobo la verificacion`;
+  let releaseClaim = true;
+  try {
+    const attempt = await prisma.verificationAttempt.findUniqueOrThrow({
+      include: { voter: true },
+      where: { id: initialAttempt.id },
+    });
+    const authoritativeDecision =
+      decision ?? (await getIdentityVerificationAdapter().getDecision(sessionId));
 
-  return finalizeRejectedAttempt(attempt, authoritativeDecision, reason);
+    if (authoritativeDecision.status === "approved") {
+      const result = await processApprovedAttempt(attempt, authoritativeDecision);
+      releaseClaim = false;
+      return result;
+    }
+
+    if (authoritativeDecision.status === "pending") {
+      return {
+        attemptId: attempt.id,
+        message: `${authoritativeDecision.provider} todavia no emitio una decision final`,
+        outcome: "still_pending",
+        verificationStatus: "PENDIENTE",
+      };
+    }
+
+    const reason =
+      authoritativeDecision.reason ??
+      `${authoritativeDecision.provider} no aprobo la verificacion`;
+    const result = await finalizeRejectedAttempt(attempt, authoritativeDecision, reason);
+    releaseClaim = false;
+    return result;
+  } finally {
+    if (releaseClaim) {
+      await prisma.verificationAttempt.updateMany({
+        data: { webhookClaimedAt: null },
+        where: { id: initialAttempt.id, status: "PENDIENTE", webhookClaimedAt: claimedAt },
+      });
+    }
+  }
 }
 
 export function isLivenessAttempt(attemptType: VerificationType): boolean {

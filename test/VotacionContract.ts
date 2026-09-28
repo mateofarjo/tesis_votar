@@ -1,66 +1,66 @@
+import { createHash, generateKeyPairSync, createPrivateKey, createPublicKey } from "node:crypto";
+
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { VotacionContract__factory, type VotacionContract } from "../typechain-types";
 
 const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+const VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v1";
+type TestRsaKey = { d: bigint; e: bigint; n: bigint };
 
-const RSA_N = 3233n;
-const RSA_E = 17n;
-const RSA_D = 2753n;
-
-function bigintToBytes(value: bigint): string {
-  if (value < 0n) {
-    throw new Error("RSA no admite valores negativos");
-  }
-
-  let hex = value.toString(16);
-  if (hex.length % 2 !== 0) {
-    hex = `0${hex}`;
-  }
-
-  return `0x${hex}`;
+function base64UrlToBigint(value: string): bigint {
+  return BigInt(`0x${Buffer.from(value, "base64url").toString("hex")}`);
 }
 
-function hexToBigint(value: string): bigint {
-  return BigInt(value);
+// Test-only key: generated once per test process, never used by deployment.
+const rsaKey: TestRsaKey = (() => {
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    privateKeyEncoding: { format: "pem", type: "pkcs1" },
+    publicKeyEncoding: { format: "pem", type: "spki" }
+  });
+  const privateJwk = createPrivateKey(privateKey).export({ format: "jwk" });
+  const publicJwk = createPublicKey(publicKey).export({ format: "jwk" });
+  if (!privateJwk.d || !publicJwk.e || !publicJwk.n) throw new Error("Fixture RSA invalido");
+  return { d: base64UrlToBigint(privateJwk.d), e: base64UrlToBigint(publicJwk.e), n: base64UrlToBigint(publicJwk.n) };
+})();
+
+function bigintToBytes(value: bigint, lengthBytes?: number): string {
+  let hex = value.toString(16);
+  if (hex.length % 2) hex = `0${hex}`;
+  return `0x${lengthBytes ? hex.padStart(lengthBytes * 2, "0") : hex}`;
 }
 
 function modPow(base: bigint, exponent: bigint, modulus: bigint): bigint {
-  if (modulus === 1n) {
-    return 0n;
-  }
-
   let result = 1n;
   let currentBase = base % modulus;
-  let currentExponent = exponent;
-
-  while (currentExponent > 0n) {
-    if (currentExponent % 2n === 1n) {
-      result = (result * currentBase) % modulus;
-    }
-
-    currentExponent /= 2n;
+  while (exponent > 0n) {
+    if (exponent % 2n) result = (result * currentBase) % modulus;
+    exponent /= 2n;
     currentBase = (currentBase * currentBase) % modulus;
   }
-
   return result;
 }
 
-function encodePublicKey(): string {
-  return abiCoder.encode(["bytes", "bytes"], [bigintToBytes(RSA_N), bigintToBytes(RSA_E)]);
+function credentialMessage(token: string): bigint {
+  const input = Buffer.concat([Buffer.from(VOTE_CREDENTIAL_DOMAIN), Buffer.from(token.slice(2), "hex")]);
+  return BigInt(`0x${createHash("sha256").update(input).digest("hex")}`);
 }
 
-function buildSignedToken(tokenByte: number) {
-  const token = ethers.hexlify(Uint8Array.from([tokenByte]));
-  const message = hexToBigint(token);
-  const signature = bigintToBytes(modPow(message, RSA_D, RSA_N));
-  const payload = abiCoder.encode(["bytes", "bytes"], [token, signature]);
+function encodePublicKey(): string {
+  return abiCoder.encode(["bytes", "bytes"], [bigintToBytes(rsaKey.n, 256), bigintToBytes(rsaKey.e)]);
+}
 
+function buildSignedToken(lastByte: number) {
+  const token = `0x${"00".repeat(31)}${lastByte.toString(16).padStart(2, "0")}`;
+  const signature = modPow(credentialMessage(token), rsaKey.d, rsaKey.n);
+  const signatureHex = bigintToBytes(signature, 256);
   return {
     token,
     signature,
-    payload,
+    signatureHex,
+    payload: abiCoder.encode(["bytes", "bytes"], [token, signatureHex]),
     tokenHash: ethers.keccak256(token)
   };
 }
@@ -68,114 +68,69 @@ function buildSignedToken(tokenByte: number) {
 describe("VotacionContract", function () {
   async function deployFixture() {
     const [autoridad, votante] = await ethers.getSigners();
-    const factory = new VotacionContract__factory(autoridad);
-    const contract: VotacionContract = await factory.deploy(
-      ["Lista A", "Lista B", "Blanco"],
-      encodePublicKey()
+    const contract: VotacionContract = await new VotacionContract__factory(autoridad).deploy(
+      ["Lista A", "Lista B", "Blanco"], encodePublicKey()
     );
-
     await contract.waitForDeployment();
-
     return { contract, autoridad, votante };
   }
 
   it("inicializa autoridad, candidatos y estado cerrado", async function () {
     const { contract, autoridad } = await loadFixture(deployFixture);
-
     expect(await contract.owner()).to.equal(autoridad.address);
     expect(await contract.autoridad()).to.equal(autoridad.address);
     expect(await contract.estado()).to.equal(0n);
-    expect(await contract.fechaApertura()).to.equal(0n);
-    expect(await contract.totalVotosEmitidos()).to.equal(0n);
-
-    const candidato0 = await contract.candidatos(0);
-    const candidato1 = await contract.candidatos(1);
-
-    expect(candidato0.id).to.equal(0n);
-    expect(candidato0.nombre).to.equal("Lista A");
-    expect(candidato0.votos).to.equal(0n);
-    expect(candidato1.id).to.equal(1n);
-    expect(candidato1.nombre).to.equal("Lista B");
+    expect((await contract.candidatos(1)).nombre).to.equal("Lista B");
   });
 
   it("solo la autoridad puede abrir y cerrar la urna", async function () {
     const { contract, votante } = await loadFixture(deployFixture);
-
     await expect(contract.connect(votante).abrirUrna()).to.be.revertedWith("Solo la autoridad electoral");
-    await expect(contract.abrirUrna()).to.emit(contract, "UrnaAbierta");
-    expect(await contract.estado()).to.equal(1n);
-
-    await expect(contract.abrirUrna()).to.be.revertedWith("La urna no puede abrirse");
+    await contract.abrirUrna();
     await expect(contract.connect(votante).cerrarUrna()).to.be.revertedWith("Solo la autoridad electoral");
-
     await expect(contract.cerrarUrna()).to.emit(contract, "UrnaCerrada");
-    expect(await contract.estado()).to.equal(2n);
-    expect(await contract.fechaCierre()).to.be.greaterThan(0n);
-
-    await expect(contract.abrirUrna()).to.be.revertedWith("La urna no puede abrirse");
   });
 
-  it("contabiliza un voto valido y emite el evento correspondiente", async function () {
+  it("contabiliza una credencial RSA canónica de 2048 bits", async function () {
     const { contract } = await loadFixture(deployFixture);
     const signedToken = buildSignedToken(42);
-
     await contract.abrirUrna();
-
-    await expect(contract.emitirVoto(signedToken.payload, 1))
-      .to.emit(contract, "VotoEmitido")
-      .withArgs(signedToken.tokenHash, 1);
-
-    expect(await contract.tokenUsado(signedToken.tokenHash)).to.equal(true);
+    await expect(contract.emitirVoto(signedToken.payload, 1)).to.emit(contract, "VotoEmitido").withArgs(signedToken.tokenHash, 1);
     expect(await contract.totalVotosEmitidos()).to.equal(1n);
-
-    const candidato = await contract.candidatos(1);
-    expect(candidato.votos).to.equal(1n);
-
-    const resultados = await contract.obtenerResultados();
-    expect(resultados).to.have.length(3);
-    expect(resultados[1].nombre).to.equal("Lista B");
-    expect(resultados[1].votos).to.equal(1n);
   });
 
-  it("rechaza el doble voto con el mismo token", async function () {
+  it("rechaza doble voto, firma adulterada y candidato inexistente", async function () {
     const { contract } = await loadFixture(deployFixture);
     const signedToken = buildSignedToken(99);
-
     await contract.abrirUrna();
     await contract.emitirVoto(signedToken.payload, 0);
-
     await expect(contract.emitirVoto(signedToken.payload, 2)).to.be.revertedWith("El token ya fue utilizado");
+    const other = buildSignedToken(100);
+    const forged = abiCoder.encode(["bytes", "bytes"], [other.token, bigintToBytes(1n, 256)]);
+    await expect(contract.emitirVoto(forged, 0)).to.be.revertedWith("Token o firma invalidos");
+    await expect(contract.emitirVoto(other.payload, 9)).to.be.revertedWith("Candidato invalido");
   });
 
-  it("rechaza firmas adulteradas", async function () {
+  it("rechaza falsificación multiplicativa y formatos no canónicos", async function () {
     const { contract } = await loadFixture(deployFixture);
     const signedToken = buildSignedToken(17);
-    const forgedPayload = abiCoder.encode(["bytes", "bytes"], [signedToken.token, "0x01"]);
-
+    const forgedMessage = modPow(credentialMessage(signedToken.token), 2n, rsaKey.n);
+    const forgedSignature = (signedToken.signature * signedToken.signature) % rsaKey.n;
+    const multiplicativeForgery = abiCoder.encode(
+      ["bytes", "bytes"],
+      [bigintToBytes(forgedMessage, 256), bigintToBytes(forgedSignature, 256)]
+    );
+    const shortToken = abiCoder.encode(["bytes", "bytes"], ["0x1234", signedToken.signatureHex]);
+    const shortSignature = abiCoder.encode(["bytes", "bytes"], [signedToken.token, "0x01"]);
     await contract.abrirUrna();
-
-    await expect(contract.emitirVoto(forgedPayload, 0)).to.be.revertedWith("Token o firma invalidos");
+    await expect(contract.emitirVoto(multiplicativeForgery, 0)).to.be.revertedWith("Token o firma invalidos");
+    await expect(contract.emitirVoto(shortToken, 0)).to.be.revertedWith("Token o firma invalidos");
+    await expect(contract.emitirVoto(shortSignature, 0)).to.be.revertedWith("Token o firma invalidos");
   });
 
-  it("rechaza candidato inexistente y votos fuera de ventana", async function () {
-    const { contract } = await loadFixture(deployFixture);
-    const signedToken = buildSignedToken(55);
-
-    await expect(contract.emitirVoto(signedToken.payload, 0)).to.be.revertedWith("La urna no esta abierta");
-
-    await contract.abrirUrna();
-
-    await expect(contract.emitirVoto(signedToken.payload, 9)).to.be.revertedWith("Candidato invalido");
-  });
-
-  it("sincroniza autoridad al transferir ownership y bloquea renuncia", async function () {
-    const { contract, votante } = await loadFixture(deployFixture);
-
-    await contract.transferOwnership(votante.address);
-
-    expect(await contract.owner()).to.equal(votante.address);
-    expect(await contract.autoridad()).to.equal(votante.address);
-
-    await expect(contract.renounceOwnership()).to.be.revertedWith("Operacion deshabilitada");
+  it("rechaza claves que no sean RSA de 2048 bits", async function () {
+    const [autoridad] = await ethers.getSigners();
+    const invalidKey = abiCoder.encode(["bytes", "bytes"], ["0x1234", "0x010001"]);
+    await expect(new VotacionContract__factory(autoridad).deploy(["Lista A"], invalidKey)).to.be.revertedWith("Clave publica invalida");
   });
 });

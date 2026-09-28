@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { getServerAuthSession } from "../../../lib/auth";
 import { createAuditLog } from "../../../lib/audit";
 import { decodeSignedVoteTokenFromContract } from "../../../lib/blindSignature";
 import {
   emitirVotoEnContrato,
   getContractAddress
 } from "../../../lib/ethers";
-import { Prisma } from "@prisma/client";
-import prisma from "../../../lib/prisma";
-import { getClientIp, getUserAgent, sha256Hex } from "../../../lib/request";
+import { getClientIp } from "../../../lib/request";
 import { consumeRateLimit } from "../../../lib/rateLimit";
 
 type VoteRequestBody = {
@@ -17,8 +14,8 @@ type VoteRequestBody = {
   tokenFirmado?: string;
 };
 
-function normalizeTokenDigestHex(tokenDigestHex: string): string {
-  return tokenDigestHex.replace(/^0x/, "").toLowerCase();
+function isCanonicalVoteToken(tokenHex: string): boolean {
+  return /^0x[0-9a-f]{64}$/i.test(tokenHex);
 }
 
 function getErrorMessage(error: unknown): string {
@@ -26,17 +23,11 @@ function getErrorMessage(error: unknown): string {
 }
 
 export async function POST(request: Request) {
-  const session = await getServerAuthSession();
-  if (!session?.user || session.user.role !== "VOTANTE" || !session.user.voterId) {
-    return NextResponse.json({ error: "Sesion no autorizada" }, { status: 401 });
-  }
-
   const clientIp = getClientIp(request.headers) ?? "unknown";
-  const userAgent = getUserAgent(request.headers);
   const rateLimit = consumeRateLimit({
-    identifier: `${clientIp}:${session.user.voterId}`,
+    identifier: clientIp,
     keyPrefix: "api:voto",
-    limit: 10,
+    limit: 30,
     windowMs: 10 * 60_000
   });
 
@@ -60,64 +51,10 @@ export async function POST(request: Request) {
       ? body.candidatoId
       : Number.NaN;
 
-  if (!tokenFirmado || !Number.isInteger(candidatoId) || candidatoId < 0) {
+  if (!tokenFirmado || !Number.isInteger(candidatoId) || candidatoId < 0 || candidatoId > 255) {
     return NextResponse.json(
       { error: "tokenFirmado y candidatoId son obligatorios" },
       { status: 400 }
-    );
-  }
-
-  const voter = await prisma.voter.findUnique({
-    select: {
-      estado: true,
-      id: true,
-      votoEmitido: true
-    },
-    where: {
-      id: session.user.voterId
-    }
-  });
-
-  if (!voter) {
-    return NextResponse.json({ error: "Votante no encontrado" }, { status: 404 });
-  }
-
-  if (voter.votoEmitido || voter.estado === "VOTO_EMITIDO") {
-    return NextResponse.json(
-      { error: "El votante ya emitio su voto" },
-      { status: 409 }
-    );
-  }
-
-  const signedTokenHash = sha256Hex(tokenFirmado);
-  const voteToken = await prisma.voteToken.findFirst({
-    where: {
-      signedTokenHash,
-      status: "EMITIDO",
-      voterId: voter.id
-    }
-  });
-
-  if (!voteToken) {
-    return NextResponse.json(
-      { error: "No existe un token emitido valido para este votante" },
-      { status: 404 }
-    );
-  }
-
-  if (voteToken.expiresAt.getTime() <= Date.now()) {
-    await prisma.voteToken.update({
-      data: {
-        status: "EXPIRADO"
-      },
-      where: {
-        id: voteToken.id
-      }
-    });
-
-    return NextResponse.json(
-      { error: "El token de voto expiro. Genera uno nuevo." },
-      { status: 410 }
     );
   }
 
@@ -131,9 +68,9 @@ export async function POST(request: Request) {
     );
   }
 
-  if (normalizeTokenDigestHex(decodedToken.tokenDigestHex) !== voteToken.tokenHash) {
+  if (!isCanonicalVoteToken(decodedToken.tokenDigestHex)) {
     return NextResponse.json(
-      { error: "El tokenFirmado no coincide con el token emitido para el votante" },
+      { error: "El tokenFirmado no contiene un token canonico de 32 bytes" },
       { status: 400 }
     );
   }
@@ -141,15 +78,10 @@ export async function POST(request: Request) {
   await createAuditLog({
     action: "VOTO_ENVIADO",
     actorType: "VOTER",
-    ipAddress: clientIp,
     metadata: {
-      candidatoId
+      privacy: "anonymous_vote_submission_no_identity_network_or_candidate_metadata"
     },
-    resourceId: voteToken.id,
-    resourceType: "vote_token",
-    userAgent,
-    voteTokenId: voteToken.id,
-    voterId: voter.id
+    resourceType: "anonymous_vote"
   });
 
   try {
@@ -162,60 +94,27 @@ export async function POST(request: Request) {
       throw new Error("La transaccion no devolvio receipt");
     }
 
-    const usedAt = new Date();
-
-    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await tx.voteToken.update({
-        data: {
-          blockchainTxHash: receipt.hash,
-          status: "CONSUMIDO",
-          usedAt
-        },
-        where: {
-          id: voteToken.id
-        }
-      });
-
-      await tx.voter.update({
-        data: {
-          estado: "VOTO_EMITIDO",
-          votoEmitido: true,
-          votedAt: usedAt
-        },
-        where: {
-          id: voter.id
-        }
-      });
-    });
-
     await createAuditLog({
       action: "TOKEN_CONSUMIDO",
       actorType: "SISTEMA",
-      ipAddress: clientIp,
       metadata: {
-        blockchainTxHash: receipt.hash
+        blockchainTxHash: receipt.hash,
+        privacy: "token_consumed_on_chain_only"
       },
-      resourceId: voteToken.id,
-      resourceType: "vote_token",
-      userAgent,
-      voteTokenId: voteToken.id,
-      voterId: voter.id
+      resourceId: receipt.hash,
+      resourceType: "blockchain_transaction"
     });
 
     await createAuditLog({
       action: "VOTO_CONFIRMADO",
       actorType: "SISTEMA",
-      ipAddress: clientIp,
       metadata: {
         blockNumber: receipt.blockNumber,
         blockchainTxHash: receipt.hash,
-        candidatoId
+        privacy: "no_voter_id_vote_token_id_network_or_candidate_stored"
       },
       resourceId: receipt.hash,
-      resourceType: "blockchain_transaction",
-      userAgent,
-      voteTokenId: voteToken.id,
-      voterId: voter.id
+      resourceType: "blockchain_transaction"
     });
 
     return NextResponse.json({

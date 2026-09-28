@@ -10,6 +10,9 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 /// La clave publica se persiste como abi.encode(bytes modulus, bytes exponent)
 /// para verificar RSA con el precompile modexp (0x05) sin exponer identidad.
 contract VotacionContract is Ownable, ReentrancyGuard {
+    uint256 private constant RSA_MODULUS_LENGTH_BYTES = 256;
+    uint256 private constant VOTE_TOKEN_LENGTH_BYTES = 32;
+    bytes private constant VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v1";
     enum EstadoUrna {
         CERRADA,
         ABIERTA,
@@ -44,7 +47,10 @@ contract VotacionContract is Ownable, ReentrancyGuard {
         require(nombresCandidatos.length <= 256, "Maximo 256 candidatos");
 
         (bytes memory modulus, bytes memory exponent) = abi.decode(pubKey, (bytes, bytes));
-        require(modulus.length > 0 && exponent.length > 0, "Clave publica invalida");
+        require(
+            modulus.length == RSA_MODULUS_LENGTH_BYTES && exponent.length > 0,
+            "Clave publica invalida"
+        );
 
         autoridad = msg.sender;
         estado = EstadoUrna.CERRADA;
@@ -127,20 +133,22 @@ contract VotacionContract is Ownable, ReentrancyGuard {
         (bytes memory token, bytes memory signature) = _decodeTokenFirmado(tokenFirmado);
         (bytes memory modulus, bytes memory exponent) = _decodePublicKey();
 
-        if (token.length == 0 || signature.length == 0) {
+        if (token.length != VOTE_TOKEN_LENGTH_BYTES || signature.length != RSA_MODULUS_LENGTH_BYTES) {
             return false;
         }
 
-        if (modulus.length == 0 || exponent.length == 0) {
-            return false;
-        }
-
-        if (token.length > modulus.length || signature.length > modulus.length) {
+        if (modulus.length != RSA_MODULUS_LENGTH_BYTES || exponent.length == 0) {
             return false;
         }
 
         bytes memory recoveredMessage = _modExp(signature, exponent, modulus);
-        bytes memory normalizedToken = _leftPad(token, modulus.length);
+        // RSA nunca firma el token crudo. La codificacion separada por dominio
+        // impide que la propiedad multiplicativa de RSA genere otra credencial
+        // valida a partir de firmas observadas.
+        bytes memory normalizedToken = _leftPad(
+            abi.encodePacked(sha256(abi.encodePacked(VOTE_CREDENTIAL_DOMAIN, token))),
+            modulus.length
+        );
 
         return keccak256(recoveredMessage) == keccak256(normalizedToken);
     }

@@ -234,6 +234,21 @@ export async function cerrarUrna(): Promise<ContractTransactionReceipt | null> {
   return tx.wait();
 }
 
+/**
+ * Simula `emitirVoto` contra el nodo sin enviar transaccion ni consumir gas.
+ *
+ * El endpoint de voto no exige autenticacion y el gas lo paga el retransmisor,
+ * de modo que sin esta comprobacion cualquiera podria hacerle gastar fondos
+ * enviando credenciales que el contrato va a rechazar. La llamada estatica
+ * reproduce exactamente las condiciones de la transaccion real —incluida la
+ * deduplicacion del token y el estado de la urna— y lanza con el motivo de
+ * reversion si la credencial no procede.
+ */
+export async function simularEmitirVoto(input: EmitirVotoInput): Promise<void> {
+  const contract = getVotacionWriteContract();
+  await contract.emitirVoto.staticCall(input.tokenFirmado, input.candidatoId);
+}
+
 export async function emitirVotoEnContrato(
   input: EmitirVotoInput
 ): Promise<ContractTransactionReceipt | null> {

@@ -2,7 +2,7 @@
 const config = {
   clearMocks: true,
   testEnvironment: "node",
-  testMatch: ["<rootDir>/lib/**/*.test.ts"],
+  testMatch: ["<rootDir>/lib/**/*.test.ts", "<rootDir>/app/**/*.test.ts"],
   transform: {
     "^.+\\.tsx?$": [
       "ts-jest",

@@ -30,18 +30,15 @@ type AdminSnapshot = {
     registrados?: number;
     total: number;
     verificadas: number;
-    votoEmitido: number;
   };
   totalVotos: number | null;
   resultadosPublicos?: boolean;
   updatedAt: string;
   voters: Array<{
     createdAt: string;
-    estado: "REGISTRADO" | "VERIFICADO" | "VOTO_EMITIDO";
+    estado: "REGISTRADO" | "VERIFICADO";
     id: string;
     verifiedAt: string | null;
-    votoEmitido: boolean;
-    votedAt: string | null;
   }>;
 };
 type AdminActionReceipt = {
@@ -70,7 +67,6 @@ function UrnaStateBadge({ estado }: { estado: AdminSnapshot["estadoUrna"] | unde
 }
 
 function VoterBadge({ estado }: { estado: AdminSnapshot["voters"][number]["estado"] }) {
-  if (estado === "VOTO_EMITIDO") return <span className="status-chip-success text-[10px]"><CheckCircle2 size={10} /> Votó</span>;
   if (estado === "VERIFICADO") return <span className="status-chip text-[10px] border-brand-teal/30 bg-brand-mint/60 text-brand-teal">Verificado</span>;
   return <span className="status-chip text-[10px]">Registrado</span>;
 }
@@ -376,7 +372,7 @@ export default function AdminPage() {
                     <table className="min-w-full border-collapse text-left text-sm">
                       <thead className="sticky top-0 bg-brand-ink">
                         <tr>
-                          {["ID", "Estado", "Alta", "Verificado", "Votado"].map((h) => (
+                          {["ID", "Estado", "Alta", "Verificado"].map((h) => (
                             <th key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-white/80">
                               {h}
                             </th>
@@ -399,7 +395,6 @@ export default function AdminPage() {
                             </td>
                             <td className="px-4 py-3 text-xs text-brand-ink/65">{formatDateTime(voter.createdAt)}</td>
                             <td className="px-4 py-3 text-xs text-brand-ink/65">{formatDateTime(voter.verifiedAt)}</td>
-                            <td className="px-4 py-3 text-xs text-brand-ink/65">{formatDateTime(voter.votedAt)}</td>
                           </tr>
                         ))}
                         {pagedVoters.length === 0 && (

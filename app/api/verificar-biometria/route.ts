@@ -18,7 +18,7 @@ export async function POST(request: Request) {
 
   const clientIp = getClientIp(request.headers) ?? "unknown";
   const userAgent = getUserAgent(request.headers);
-  const rateLimit = consumeRateLimit({
+  const rateLimit = await consumeRateLimit({
     identifier: `${clientIp}:${session.user.voterId}`,
     keyPrefix: "api:verificar-biometria:init",
     limit: 5,
@@ -38,7 +38,6 @@ export async function POST(request: Request) {
       estado: true,
       id: true,
       veriffPersonId: true,
-      votoEmitido: true
     },
     where: {
       id: session.user.voterId
@@ -47,13 +46,6 @@ export async function POST(request: Request) {
 
   if (!voter) {
     return NextResponse.json({ error: "Votante no encontrado" }, { status: 404 });
-  }
-
-  if (voter.votoEmitido || voter.estado === "VOTO_EMITIDO") {
-    return NextResponse.json(
-      { error: "El votante ya emitio su voto" },
-      { status: 409 }
-    );
   }
 
   const vendorData = voter.dniHash ?? voter.id;
@@ -177,7 +169,7 @@ export async function GET(request: Request) {
   }
 
   const clientIp = getClientIp(request.headers) ?? "unknown";
-  const rateLimit = consumeRateLimit({
+  const rateLimit = await consumeRateLimit({
     identifier: `${clientIp}:${session.user.voterId}`,
     keyPrefix: "api:verificar-biometria:status",
     limit: 30,
@@ -241,7 +233,6 @@ export async function GET(request: Request) {
   const voter = await prisma.voter.findUnique({
     select: {
       estado: true,
-      votoEmitido: true
     },
     where: {
       id: session.user.voterId
@@ -256,6 +247,5 @@ export async function GET(request: Request) {
     status: attempt.status,
     veriffSessionId: attempt.veriffSessionId,
     voterEstado: voter?.estado ?? null,
-    votoEmitido: voter?.votoEmitido ?? false
   });
 }

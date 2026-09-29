@@ -19,7 +19,7 @@ function serializeUnixTimestamp(value: bigint): string | null {
 
 export async function GET(request: Request) {
   const clientIp = getClientIp(request.headers) ?? "unknown";
-  const rateLimit = consumeRateLimit({
+  const rateLimit = await consumeRateLimit({
     identifier: clientIp,
     keyPrefix: "api:resultados",
     limit: 90,

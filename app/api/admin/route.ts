@@ -37,9 +37,7 @@ async function buildAdminSnapshot() {
         createdAt: true,
         estado: true,
         id: true,
-        verifiedAt: true,
-        votoEmitido: true,
-        votedAt: true
+        verifiedAt: true
       }
     }),
     prisma.voter.groupBy({
@@ -53,7 +51,6 @@ async function buildAdminSnapshot() {
   const padronCounts = {
     registrados: 0,
     verificadas: 0,
-    votoEmitido: 0
   };
 
   for (const item of padron) {
@@ -65,9 +62,6 @@ async function buildAdminSnapshot() {
       padronCounts.verificadas = item._count._all;
     }
 
-    if (item.estado === "VOTO_EMITIDO") {
-      padronCounts.votoEmitido = item._count._all;
-    }
   }
 
   // El escrutinio parcial no se expone ni siquiera a la autoridad electoral:
@@ -96,8 +90,6 @@ async function buildAdminSnapshot() {
       estado: voter.estado,
       id: voter.id,
       verifiedAt: voter.verifiedAt?.toISOString() ?? null,
-      votoEmitido: voter.votoEmitido,
-      votedAt: voter.votedAt?.toISOString() ?? null
     }))
   };
 }
@@ -113,7 +105,7 @@ export async function GET(request: Request) {
   }
 
   const clientIp = getClientIp(request.headers) ?? "unknown";
-  const rateLimit = consumeRateLimit({
+  const rateLimit = await consumeRateLimit({
     identifier: `${clientIp}:admin`,
     keyPrefix: "api:admin:read",
     limit: 60,
@@ -148,7 +140,7 @@ export async function POST(request: Request) {
 
   const clientIp = getClientIp(request.headers) ?? "unknown";
   const userAgent = getUserAgent(request.headers);
-  const rateLimit = consumeRateLimit({
+  const rateLimit = await consumeRateLimit({
     identifier: `${clientIp}:admin`,
     keyPrefix: "api:admin:write",
     limit: 12,

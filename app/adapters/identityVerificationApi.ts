@@ -56,7 +56,6 @@ export function adaptBiometricStatus(
     status: payload.status,
     veriffSessionId: payload.veriffSessionId,
     voterEstado: payload.voterEstado,
-    votoEmitido: payload.votoEmitido,
   };
 }
 

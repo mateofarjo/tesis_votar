@@ -172,11 +172,6 @@ export default function VotarPage() {
                     return;
                 }
                 setBiometricAttempt(payload);
-                if (payload.votoEmitido) {
-                    clearPendingBiometricVerification();
-                    setNotice("Tu voto ya fue confirmado en blockchain.");
-                    return;
-                }
                 if (payload.status === "PENDIENTE") {
                     beginBiometricPolling(payload.veriffSessionId);
                     if (
@@ -228,7 +223,6 @@ export default function VotarPage() {
             status: "PENDIENTE",
             veriffSessionId: verificationSessionId,
             voterEstado: session?.user.estado ?? null,
-            votoEmitido: false,
         });
 
         return verificationSessionId;
@@ -303,13 +297,6 @@ export default function VotarPage() {
                     "No existe un intento de verificación biométrica para este votante",
                 );
             setBiometricAttempt(payload);
-            if (payload.votoEmitido) {
-                stopBiometricPolling();
-                closeVerificationFrame();
-                clearPendingBiometricVerification();
-                setNotice("El voto ya fue emitido para esta sesión.");
-                return;
-            }
             if (payload.status === "APROBADO" && payload.biometricMatch) {
                 stopBiometricPolling();
                 closeVerificationFrame();

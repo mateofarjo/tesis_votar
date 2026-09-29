@@ -23,7 +23,7 @@ type RegistroRequestBody = {
 export async function POST(request: Request) {
   const clientIp = getClientIp(request.headers) ?? "unknown";
   const userAgent = getUserAgent(request.headers);
-  const rateLimit = consumeRateLimit({
+  const rateLimit = await consumeRateLimit({
     identifier: clientIp,
     keyPrefix: "api:registro",
     limit: 5,
@@ -235,7 +235,7 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   const clientIp = getClientIp(request.headers) ?? "unknown";
-  const rateLimit = consumeRateLimit({
+  const rateLimit = await consumeRateLimit({
     identifier: clientIp,
     keyPrefix: "api:registro:status",
     limit: 20,

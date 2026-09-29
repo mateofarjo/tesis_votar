@@ -77,7 +77,6 @@ export type BiometricStatusResponse = {
   status: VerificationStatus;
   veriffSessionId: string;
   voterEstado: string | null;
-  votoEmitido: boolean;
 };
 
 export async function createRegistrationVerification(

@@ -268,13 +268,10 @@ async function processLivenessApproval(
 
   const updatedVoter = biometricMatch
     ? await prisma.voter.update({
-        data:
-          attempt.voter.estado === "VOTO_EMITIDO"
-            ? {}
-            : {
-                estado: "VERIFICADO",
-                verifiedAt: resolvedAt,
-              },
+        data: {
+          estado: "VERIFICADO",
+          verifiedAt: resolvedAt,
+        },
         where: {
           id: attempt.voter.id,
         },

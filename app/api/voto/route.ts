@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { createAuditLog } from "../../../lib/audit";
-import { decodeSignedVoteTokenFromContract } from "../../../lib/blindSignature";
 import {
-  emitirVotoEnContrato,
-  getContractAddress
-} from "../../../lib/ethers";
+  decodeSignedVoteTokenFromContract,
+  esCredencialValidaFueraDeCadena
+} from "../../../lib/blindSignature";
+import { getContractAddress } from "../../../lib/ethers";
+import { encolarVoto } from "../../../lib/relayQueue";
 import { getClientIp } from "../../../lib/request";
 import { consumeRateLimit } from "../../../lib/rateLimit";
 
@@ -24,7 +25,7 @@ function getErrorMessage(error: unknown): string {
 
 export async function POST(request: Request) {
   const clientIp = getClientIp(request.headers) ?? "unknown";
-  const rateLimit = consumeRateLimit({
+  const rateLimit = await consumeRateLimit({
     identifier: clientIp,
     keyPrefix: "api:voto",
     limit: 30,
@@ -75,6 +76,16 @@ export async function POST(request: Request) {
     );
   }
 
+  // El gas lo paga el retransmisor y este endpoint no exige autenticacion: una
+  // credencial mal formada o con firma invalida se descarta aqui, antes de
+  // gastar un centavo en una transaccion que el contrato revertiria.
+  if (!esCredencialValidaFueraDeCadena(decodedToken.tokenDigestHex, decodedToken.signatureHex)) {
+    return NextResponse.json(
+      { error: "La credencial no lleva una firma valida de la autoridad electoral" },
+      { status: 400 }
+    );
+  }
+
   await createAuditLog({
     action: "VOTO_ENVIADO",
     actorType: "VOTER",
@@ -85,7 +96,10 @@ export async function POST(request: Request) {
   });
 
   try {
-    const receipt = await emitirVotoEnContrato({
+    // La cola aplica una demora aleatoria y baraja el lote antes de enviar, de
+    // modo que el orden de las transacciones en la cadena no reproduzca el orden
+    // en que las personas votaron. Ver lib/relayQueue.ts.
+    const receipt = await encolarVoto({
       candidatoId,
       tokenFirmado
     });

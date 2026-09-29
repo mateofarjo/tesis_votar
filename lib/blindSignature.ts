@@ -382,3 +382,54 @@ export function exportAuthorityPublicKeyForContract(): string {
     [publicKey.modulusHex, publicKey.exponentHex]
   );
 }
+
+/**
+ * Verifica fuera de la cadena que una credencial satisfaga la ecuacion RSA del
+ * contrato: `s^e mod n == SHA-256(dominio || token)`, con el digesto alineado a
+ * la izquierda al tamano del modulo.
+ *
+ * Existe para que el retransmisor pueda descartar credenciales invalidas antes
+ * de pagar gas por una transaccion que el contrato va a revertir de todos modos.
+ * No sustituye la verificacion on-chain, que sigue siendo la que decide: esta es
+ * una comprobacion previa, del lado del que paga.
+ */
+export function esCredencialValidaFueraDeCadena(
+  tokenHex: string,
+  signatureHex: string
+): boolean {
+  const token = tokenHex.trim().toLowerCase();
+  const firma = signatureHex.trim().toLowerCase();
+
+  if (!/^0x[0-9a-f]{64}$/.test(token) || !/^0x[0-9a-f]{512}$/.test(firma)) {
+    return false;
+  }
+
+  try {
+    // Ojo: E y N se exponen en representacion decimal, porque es lo que espera
+    // la biblioteca de firma ciega. Los campos hexadecimales son los que
+    // corresponde usar aqui.
+    const { exponentHex, modulusHex } = getBlindSignaturePublicKey();
+    const n = BigInt(modulusHex.startsWith("0x") ? modulusHex : `0x${modulusHex}`);
+    const e = BigInt(exponentHex.startsWith("0x") ? exponentHex : `0x${exponentHex}`);
+    const s = BigInt(firma);
+
+    if (s <= 0n || s >= n) {
+      return false;
+    }
+
+    let recuperado = 1n;
+    let base = s % n;
+    let exponente = e;
+    while (exponente > 0n) {
+      if (exponente & 1n) {
+        recuperado = (recuperado * base) % n;
+      }
+      exponente >>= 1n;
+      base = (base * base) % n;
+    }
+
+    return recuperado === BigInt(getVoteTokenDigestHex(token));
+  } catch {
+    return false;
+  }
+}

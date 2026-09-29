@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   }
 
   const clientIp = getClientIp(request.headers) ?? "unknown";
-  const rateLimit = consumeRateLimit({
+  const rateLimit = await consumeRateLimit({
     identifier: `${clientIp}:admin`,
     keyPrefix: "api:admin:export",
     limit: 10,
@@ -53,9 +53,7 @@ export async function GET(request: Request) {
           createdAt: true,
           estado: true,
           id: true,
-          verifiedAt: true,
-          votoEmitido: true,
-          votedAt: true
+          verifiedAt: true
         }
       })
     ]);
@@ -73,8 +71,6 @@ export async function GET(request: Request) {
         estado: voter.estado,
         id: voter.id,
         verifiedAt: voter.verifiedAt?.toISOString() ?? null,
-        votoEmitido: voter.votoEmitido,
-        votedAt: voter.votedAt?.toISOString() ?? null
       }))
     };
 

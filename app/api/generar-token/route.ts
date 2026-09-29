@@ -73,7 +73,7 @@ export async function POST(request: Request) {
 
   const clientIp = getClientIp(request.headers) ?? "unknown";
   const userAgent = getUserAgent(request.headers);
-  const rateLimit = consumeRateLimit({
+  const rateLimit = await consumeRateLimit({
     identifier: `${clientIp}:${session.user.voterId}`,
     keyPrefix: "api:generar-token",
     limit: 6,
@@ -91,7 +91,6 @@ export async function POST(request: Request) {
     select: {
       estado: true,
       id: true,
-      votoEmitido: true
     },
     where: {
       id: session.user.voterId
@@ -100,13 +99,6 @@ export async function POST(request: Request) {
 
   if (!voter) {
     return NextResponse.json({ error: "Votante no encontrado" }, { status: 404 });
-  }
-
-  if (voter.votoEmitido || voter.estado === "VOTO_EMITIDO") {
-    return NextResponse.json(
-      { error: "El votante ya emitio su voto" },
-      { status: 409 }
-    );
   }
 
   const latestApprovedAttempt = await prisma.verificationAttempt.findFirst({
@@ -138,15 +130,19 @@ export async function POST(request: Request) {
     );
   }
 
+  // La unicidad del sufragio descansa por completo en esta comprobacion: es el
+  // unico punto del sistema que puede impedir que una persona obtenga dos
+  // credenciales. Deliberadamente no se filtra por estado. Una credencial
+  // marcada EXPIRADO lo esta solo en el registro de emision: el contrato no
+  // conoce fecha alguna asociada a un token, de modo que esa credencial sigue
+  // siendo gastable mientras la urna este abierta. Permitir una segunda emision
+  // tras el vencimiento habilitaria dos votos con una sola identidad.
   const existingCredential = await prisma.voteToken.findFirst({
     select: {
       id: true,
       status: true
     },
     where: {
-      status: {
-        in: ["EMITIDO", "CONSUMIDO"]
-      },
       voterId: voter.id
     }
   });

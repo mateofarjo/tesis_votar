@@ -4,7 +4,7 @@ import type { VoteTokenResponse } from "./election";
 
 const abiCoder = ethers.AbiCoder.defaultAbiCoder();
 const STORAGE_KEY = "votar.anonymousVoteCredential.v1";
-const VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v1";
+export const VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v1";
 
 export type BlindSignaturePublicKeyResponse = {
   E: string;
@@ -61,11 +61,11 @@ function storeVoteCredential(credential: VoteTokenResponse): void {
   getStorage()?.setItem(STORAGE_KEY, JSON.stringify(credential));
 }
 
-function bytesToHex(bytes: Uint8Array): string {
+export function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function hexToBytes(hex: string): Uint8Array {
+export function hexToBytes(hex: string): Uint8Array {
   const normalized = hex.replace(/^0x/, "");
   if (!/^[0-9a-f]{64}$/i.test(normalized)) {
     throw new Error("El token de voto debe tener exactamente 32 bytes");
@@ -76,13 +76,13 @@ function hexToBytes(hex: string): Uint8Array {
   );
 }
 
-function createVoteToken(): string {
+export function createVoteToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return `0x${bytesToHex(bytes)}`;
 }
 
-async function getCredentialMessageHash(token: string): Promise<string> {
+export async function getCredentialMessageHash(token: string): Promise<string> {
   const domain = new TextEncoder().encode(VOTE_CREDENTIAL_DOMAIN);
   const tokenBytes = hexToBytes(token);
   const input = new Uint8Array(domain.length + tokenBytes.length);
@@ -92,7 +92,7 @@ async function getCredentialMessageHash(token: string): Promise<string> {
   return bytesToHex(new Uint8Array(digest));
 }
 
-function randomBigIntBelow(maxExclusive: bigint): bigint {
+export function randomBigIntBelow(maxExclusive: bigint): bigint {
   const byteLength = Math.ceil(maxExclusive.toString(16).length / 2);
   const randomBytes = new Uint8Array(byteLength);
 
@@ -105,7 +105,7 @@ function randomBigIntBelow(maxExclusive: bigint): bigint {
   }
 }
 
-function greatestCommonDivisor(a: bigint, b: bigint): bigint {
+export function greatestCommonDivisor(a: bigint, b: bigint): bigint {
   let left = a < 0n ? -a : a;
   let right = b < 0n ? -b : b;
 
@@ -118,7 +118,7 @@ function greatestCommonDivisor(a: bigint, b: bigint): bigint {
   return left;
 }
 
-function modPow(base: bigint, exponent: bigint, modulus: bigint): bigint {
+export function modPow(base: bigint, exponent: bigint, modulus: bigint): bigint {
   if (modulus === 1n) return 0n;
 
   let result = 1n;
@@ -137,7 +137,7 @@ function modPow(base: bigint, exponent: bigint, modulus: bigint): bigint {
   return result;
 }
 
-function modInverse(value: bigint, modulus: bigint): bigint {
+export function modInverse(value: bigint, modulus: bigint): bigint {
   let oldR = value;
   let r = modulus;
   let oldS = 1n;
@@ -156,12 +156,12 @@ function modInverse(value: bigint, modulus: bigint): bigint {
   return ((oldS % modulus) + modulus) % modulus;
 }
 
-function decimalToHex(decimalValue: bigint, lengthBytes: number): string {
+export function decimalToHex(decimalValue: bigint, lengthBytes: number): string {
   const hex = decimalValue.toString(16).padStart(lengthBytes * 2, "0");
   return `0x${hex}`;
 }
 
-function createBlindingFactor(modulus: bigint): bigint {
+export function createBlindingFactor(modulus: bigint): bigint {
   while (true) {
     const candidate = randomBigIntBelow(modulus);
     if (greatestCommonDivisor(candidate, modulus) === 1n) {

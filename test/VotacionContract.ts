@@ -134,6 +134,27 @@ describe("VotacionContract", function () {
     await expect(new VotacionContract__factory(autoridad).deploy(["Lista A"], invalidKey)).to.be.revertedWith("Clave publica invalida");
   });
 
+  it("exige que el exponente publico sea 65537", async function () {
+    const [autoridad] = await ethers.getSigners();
+    const conExponente = (expHex: string) =>
+      abiCoder.encode(["bytes", "bytes"], [bigintToBytes(rsaKey.n, 256), expHex]);
+
+    // e = 1 vuelve trivial la falsificacion: s^1 mod n == s.
+    await expect(
+      new VotacionContract__factory(autoridad).deploy(["Lista A"], conExponente("0x01"))
+    ).to.be.revertedWith("Exponente publico invalido");
+    await expect(
+      new VotacionContract__factory(autoridad).deploy(["Lista A"], conExponente("0x03"))
+    ).to.be.revertedWith("Exponente publico invalido");
+
+    // 65537 es aceptado tanto en su codificacion canonica como con ceros a la izquierda.
+    for (const canonico of ["0x010001", "0x00000000010001"]) {
+      const contrato = await new VotacionContract__factory(autoridad).deploy(["Lista A"], conExponente(canonico));
+      await contrato.waitForDeployment();
+      expect(await contrato.estado()).to.equal(0n);
+    }
+  });
+
   it("rechaza el sufragio con la urna cerrada y con la urna finalizada", async function () {
     const { contract } = await loadFixture(deployFixture);
     const antes = buildSignedToken(70);

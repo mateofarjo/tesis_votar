@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   const identityVerification = getIdentityVerificationAdapter();
   const clientIp = getClientIp(request.headers) ?? "unknown";
   const userAgent = getUserAgent(request.headers);
-  const rateLimit = consumeRateLimit({
+  const rateLimit = await consumeRateLimit({
     identifier: `${identityVerification.provider}:${clientIp}`,
     keyPrefix: "api:identity:webhook",
     limit: 60,

@@ -38,6 +38,8 @@ contract VotacionContract is Ownable, ReentrancyGuard {
     /// @dev abi.encode(bytes modulus, bytes exponent)
     bytes public clavePublicaAutoridad;
 
+    uint256 private constant RSA_PUBLIC_EXPONENT = 65537;
+
     event VotoEmitido(bytes32 indexed tokenHash, uint8 candidatoId);
     event UrnaAbierta(uint256 timestamp);
     event UrnaCerrada(uint256 timestamp);
@@ -51,6 +53,11 @@ contract VotacionContract is Ownable, ReentrancyGuard {
             modulus.length == RSA_MODULUS_LENGTH_BYTES && exponent.length > 0,
             "Clave publica invalida"
         );
+        // Validar solo la longitud del modulo dejaria pasar exponentes arbitrarios.
+        // Un exponente igual a 1 volveria trivial la falsificacion, porque
+        // s^1 mod n == s permitiria elegir la firma y derivar de ella el mensaje.
+        // El exponente queda fijado en 65537, el valor canonico del esquema.
+        require(_esExponenteCanonico(exponent), "Exponente publico invalido");
 
         autoridad = msg.sender;
         estado = EstadoUrna.CERRADA;
@@ -183,6 +190,18 @@ contract VotacionContract is Ownable, ReentrancyGuard {
         require(success && result.length == modulus.length, "Fallo verificacion RSA");
 
         return result;
+    }
+
+    /// Acepta 65537 en su codificacion canonica (0x010001) y con ceros a la izquierda.
+    function _esExponenteCanonico(bytes memory exponent) internal pure returns (bool) {
+        uint256 valor = 0;
+        for (uint256 i = 0; i < exponent.length; ++i) {
+            if (valor > type(uint256).max >> 8) {
+                return false;
+            }
+            valor = (valor << 8) | uint8(exponent[i]);
+        }
+        return valor == RSA_PUBLIC_EXPONENT;
     }
 
     function _leftPad(bytes memory data, uint256 size) internal pure returns (bytes memory padded) {

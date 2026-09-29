@@ -18,7 +18,7 @@ import {
   Users
 } from "lucide-react";
 
-type ResultadoCandidato = { id: number; nombre: string; votos: number };
+type ResultadoCandidato = { id: number; nombre: string; votos: number | null };
 type AdminSnapshot = {
   candidatos: ResultadoCandidato[];
   contractAddress: string;
@@ -32,7 +32,8 @@ type AdminSnapshot = {
     verificadas: number;
     votoEmitido: number;
   };
-  totalVotos: number;
+  totalVotos: number | null;
+  resultadosPublicos?: boolean;
   updatedAt: string;
   voters: Array<{
     createdAt: string;
@@ -222,8 +223,7 @@ export default function AdminPage() {
               { label: "Estado", value: <UrnaStateBadge estado={snapshot?.estadoUrna} />, icon: <ShieldCheck size={14} /> },
               { label: "Registrados", value: registrados, icon: <Users size={14} /> },
               { label: "Verificados", value: snapshot?.padron.verificadas ?? 0, icon: <CheckCircle2 size={14} /> },
-              { label: "Voto emitido", value: snapshot?.padron.votoEmitido ?? 0, icon: <CheckCircle2 size={14} /> },
-              { label: "Total on-chain", value: snapshot?.totalVotos ?? 0, icon: <Link2 size={14} /> }
+                            { label: "Total on-chain", value: snapshot?.totalVotos ?? "—", icon: <Link2 size={14} /> }
             ].map(({ label, value, icon }) => (
               <div key={label} className="metric-card">
                 <div className="flex items-center gap-1.5">
@@ -308,17 +308,26 @@ export default function AdminPage() {
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
                   <BarChart3 size={16} className="text-brand-teal" />
-                  <h2 className="text-lg font-semibold text-brand-ink">Resultados en vivo</h2>
+                  <h2 className="text-lg font-semibold text-brand-ink">Escrutinio</h2>
                 </div>
                 {snapshot && (
                   <span className="text-xs text-brand-ink/40">{formatDateTime(snapshot.updatedAt)}</span>
                 )}
               </div>
+              {snapshot && !snapshot.resultadosPublicos && (
+                <p className="mt-3 text-xs text-brand-ink/55">
+                  Los conteos permanecen reservados hasta la finalizacion de la urna, tambien para la
+                  autoridad electoral: conocer el escrutinio parcial permite inferir el sentido de un
+                  voto individual observando el incremento de un contador.
+                </p>
+              )}
               <div className="mt-4 grid gap-3">
                 {isLoading
                   ? [1, 2, 3].map((i) => <div key={i} className="skeleton h-16 w-full" />)
                   : (snapshot?.candidatos ?? []).map((c) => {
-                    const pct = !snapshot || snapshot.totalVotos === 0 ? 0 : (c.votos / snapshot.totalVotos) * 100;
+                    const votos = c.votos;
+                    const total = snapshot?.totalVotos ?? 0;
+                    const pct = votos === null || !total ? 0 : (votos / total) * 100;
                     return (
                       <article key={c.id} className="rounded-[20px] border border-brand-line/60 bg-white/80 p-4">
                         <div className="flex items-center justify-between gap-3">
@@ -327,14 +336,14 @@ export default function AdminPage() {
                             <h3 className="mt-1 text-base font-semibold text-brand-ink">{c.nombre}</h3>
                           </div>
                           <div className="text-right">
-                            <p className="text-2xl font-bold text-brand-ink">{c.votos}</p>
-                            <p className="text-xs text-brand-ink/50">{pct.toFixed(1)}%</p>
+                            <p className="text-2xl font-bold text-brand-ink">{votos ?? "—"}</p>
+                            <p className="text-xs text-brand-ink/50">{votos === null ? "reservado" : `${pct.toFixed(1)}%`}</p>
                           </div>
                         </div>
                         <div className="mt-3 h-2 overflow-hidden rounded-full bg-brand-line/35">
                           <div
                             className="h-full rounded-full bg-gradient-to-r from-brand-teal to-brand-amber transition-[width] duration-700"
-                            style={{ width: `${Math.max(pct, snapshot && snapshot.totalVotos > 0 ? 4 : 0)}%` }}
+                            style={{ width: `${votos === null ? 0 : Math.max(pct, 4)}%` }}
                           />
                         </div>
                       </article>

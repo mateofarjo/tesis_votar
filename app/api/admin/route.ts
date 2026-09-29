@@ -70,17 +70,26 @@ async function buildAdminSnapshot() {
     }
   }
 
+  // El escrutinio parcial no se expone ni siquiera a la autoridad electoral:
+  // conocerlo durante el acto permite inferir el sentido de un voto individual
+  // observando el incremento de un contador (ver §14.7 de la documentacion).
+  const resultadosPublicos = estadoUrna === "FINALIZADA";
+
   return {
-    candidatos,
+    candidatos: candidatos.map((candidato) => ({
+      ...candidato,
+      votos: resultadosPublicos ? candidato.votos : null
+    })),
     contractAddress: getContractAddress(),
     estadoUrna,
+    resultadosPublicos,
     fechaApertura: serializeUnixTimestamp(fechas.fechaApertura),
     fechaCierre: serializeUnixTimestamp(fechas.fechaCierre),
     padron: {
       ...padronCounts,
       total: voters.length
     },
-    totalVotos,
+    totalVotos: resultadosPublicos ? totalVotos : null,
     updatedAt: new Date().toISOString(),
     voters: voters.map((voter: typeof voters[number]) => ({
       createdAt: voter.createdAt.toISOString(),

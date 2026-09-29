@@ -104,6 +104,37 @@ export function getBlockchainProvider(): JsonRpcProvider | AlchemyProvider {
   return cachedProvider;
 }
 
+export type NetworkInfo = {
+  chainId: number;
+  /** Nombre legible de la red a la que apunta el proveedor configurado. */
+  name: string;
+  /** URL del explorador de bloques, o null si la red no tiene uno publico. */
+  explorerUrl: string | null;
+};
+
+const REDES_CONOCIDAS: Record<number, { name: string; explorer: string | null }> = {
+  1: { name: "Ethereum", explorer: "https://etherscan.io" },
+  11155111: { name: "Sepolia", explorer: "https://sepolia.etherscan.io" },
+  31337: { name: "Nodo local (Hardhat)", explorer: null },
+  1337: { name: "Nodo local", explorer: null }
+};
+
+/**
+ * Resuelve la red efectivamente configurada en lugar de asumir Sepolia.
+ * Evita que la interfaz rotule como "Sepolia" un despliegue local y ofrezca
+ * un enlace a un explorador donde el contrato no existe.
+ */
+export async function getNetworkInfo(): Promise<NetworkInfo> {
+  const red = await getBlockchainProvider().getNetwork();
+  const chainId = Number(red.chainId);
+  const conocida = REDES_CONOCIDAS[chainId];
+  return {
+    chainId,
+    name: conocida?.name ?? `Red ${chainId}`,
+    explorerUrl: conocida?.explorer ?? null
+  };
+}
+
 export function getContractAddress(): string {
   const contractAddress = process.env.CONTRACT_ADDRESS?.trim();
   if (!contractAddress) {

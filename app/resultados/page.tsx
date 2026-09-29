@@ -18,6 +18,7 @@ type ResultadoCandidato = { id: number; nombre: string; votos: number | null };
 type ResultadosResponse = {
   candidatos: ResultadoCandidato[];
   contractAddress: string;
+  red?: { chainId: number; name: string; explorerUrl: string | null };
   estadoUrna: "CERRADA" | "ABIERTA" | "FINALIZADA";
   fechaApertura: string | null;
   fechaCierre: string | null;
@@ -254,7 +255,7 @@ export default function ResultadosPage() {
             <section className="metric-card">
               <div className="flex items-center gap-2">
                 <Link2 size={15} className="text-brand-teal" />
-                <p className="text-sm font-semibold text-brand-ink">Contrato en Sepolia</p>
+                <p className="text-sm font-semibold text-brand-ink">Contrato en {data?.red?.name ?? "la red configurada"}</p>
               </div>
               {isLoading
                 ? <div className="skeleton mt-4 h-10 w-full" />
@@ -262,16 +263,21 @@ export default function ResultadosPage() {
                   <p className="mt-3 break-all font-mono text-xs text-brand-ink/65">
                     {data?.contractAddress ?? "Sin configurar"}
                   </p>
-                  {data?.contractAddress && (
+                  {data?.contractAddress && data?.red?.explorerUrl && (
                     <a
                       className="secondary-button mt-4"
-                      href={`https://sepolia.etherscan.io/address/${data.contractAddress}`}
+                      href={`${data.red.explorerUrl}/address/${data.contractAddress}`}
                       rel="noreferrer"
                       target="_blank"
                     >
                       <ExternalLink size={14} />
-                      Ver en Etherscan
+                      Ver en el explorador
                     </a>
+                  )}
+                  {data?.contractAddress && !data?.red?.explorerUrl && (
+                    <p className="mt-4 text-xs text-brand-ink/50">
+                      Esta red no tiene explorador publico: el contrato se verifica consultando el nodo directamente.
+                    </p>
                   )}
                 </>
               }

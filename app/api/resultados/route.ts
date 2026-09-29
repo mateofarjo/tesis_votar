@@ -4,6 +4,7 @@ import {
   getContractAddress,
   getEstadoActualUrna,
   getFechasUrna,
+  getNetworkInfo,
   getResultadosContrato,
   getTotalVotosEmitidos
 } from "../../../lib/ethers";
@@ -53,6 +54,7 @@ export async function GET(request: Request) {
       {
         candidatos,
         contractAddress: getContractAddress(),
+        red: await getNetworkInfo(),
         estadoUrna,
         fechaApertura: serializeUnixTimestamp(fechas.fechaApertura),
         fechaCierre: serializeUnixTimestamp(fechas.fechaCierre),

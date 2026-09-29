@@ -133,4 +133,45 @@ describe("VotacionContract", function () {
     const invalidKey = abiCoder.encode(["bytes", "bytes"], ["0x1234", "0x010001"]);
     await expect(new VotacionContract__factory(autoridad).deploy(["Lista A"], invalidKey)).to.be.revertedWith("Clave publica invalida");
   });
+
+  it("rechaza el sufragio con la urna cerrada y con la urna finalizada", async function () {
+    const { contract } = await loadFixture(deployFixture);
+    const antes = buildSignedToken(70);
+    // urna CERRADA: aun con credencial valida el voto se rechaza
+    await expect(contract.emitirVoto.staticCall(antes.payload, 0)).to.be.revertedWith("La urna no esta abierta");
+    await contract.abrirUrna();
+    await contract.emitirVoto(antes.payload, 0);
+    await contract.cerrarUrna();
+    // urna FINALIZADA: idem
+    const despues = buildSignedToken(71);
+    await expect(contract.emitirVoto.staticCall(despues.payload, 0)).to.be.revertedWith("La urna no esta abierta");
+    expect(await contract.totalVotosEmitidos()).to.equal(1n);
+  });
+
+  it("una urna finalizada no puede reabrirse ni volver a cerrarse (R11)", async function () {
+    const { contract } = await loadFixture(deployFixture);
+    await contract.abrirUrna();
+    await contract.cerrarUrna();
+    expect(await contract.estado()).to.equal(2n);
+    await expect(contract.abrirUrna.staticCall()).to.be.revertedWith("La urna no puede abrirse");
+    await expect(contract.cerrarUrna.staticCall()).to.be.revertedWith("La urna no esta abierta");
+    expect(await contract.estado()).to.equal(2n);
+  });
+
+  it("rechaza una firma valida calculada sin separación de dominio", async function () {
+    const { contract } = await loadFixture(deployFixture);
+    const token = `0x${"00".repeat(31)}55`;
+    // mensaje SIN el prefijo de dominio: SHA-256(token) a secas
+    const sinDominio = BigInt(`0x${createHash("sha256").update(Buffer.from(token.slice(2), "hex")).digest("hex")}`);
+    const firma = modPow(sinDominio, rsaKey.d, rsaKey.n);
+    const payload = abiCoder.encode(["bytes", "bytes"], [token, bigintToBytes(firma, 256)]);
+    await contract.abrirUrna();
+    await expect(contract.emitirVoto.staticCall(payload, 0)).to.be.revertedWith("Token o firma invalidos");
+    // y la misma credencial, firmada CON el dominio, si es aceptada
+    const conDominio = abiCoder.encode(
+      ["bytes", "bytes"],
+      [token, bigintToBytes(modPow(credentialMessage(token), rsaKey.d, rsaKey.n), 256)]
+    );
+    await expect(contract.emitirVoto(conDominio, 0)).to.emit(contract, "VotoEmitido");
+  });
 });

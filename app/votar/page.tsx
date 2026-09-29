@@ -853,7 +853,7 @@ export default function VotarPage() {
                             {[
                                 "Tu identidad no viaja a la blockchain.",
                                 "El token es de un solo uso; no se puede reutilizar.",
-                                "La biometría se compara como hash, nunca en claro.",
+                                "La coincidencia biométrica la resuelve el proveedor; la app solo guarda su veredicto.",
                             ].map((text, i) => (
                                 <li
                                     key={i}

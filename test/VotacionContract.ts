@@ -174,4 +174,55 @@ describe("VotacionContract", function () {
     );
     await expect(contract.emitirVoto(conDominio, 0)).to.emit(contract, "VotoEmitido");
   });
+
+  // Criterios de aceptacion de la Fase 1 del plan de remediacion (docs/):
+  // "casos con firma multiplicada/potenciada, token de 31, 33 y 256 bytes,
+  //  firma demasiado corta/larga, cero y valores fuera de rango; todos deben
+  //  revertir salvo la credencial canonica valida".
+  it("rechaza tokens y firmas no canonicos exigidos por el plan de remediación", async function () {
+    const { contract } = await loadFixture(deployFixture);
+    const valido = buildSignedToken(120);
+    await contract.abrirUrna();
+
+    const conToken = (tokenHex: string) => abiCoder.encode(["bytes", "bytes"], [tokenHex, valido.signatureHex]);
+    const conFirma = (firmaHex: string) => abiCoder.encode(["bytes", "bytes"], [valido.token, firmaHex]);
+
+    const casos: Array<[string, string]> = [
+      ["token de 31 bytes", conToken(`0x${"11".repeat(31)}`)],
+      ["token de 33 bytes", conToken(`0x${"11".repeat(33)}`)],
+      ["token de 256 bytes", conToken(`0x${"11".repeat(256)}`)],
+      ["token vacío", conToken("0x")],
+      ["token cero de 32 bytes con firma ajena", conToken(`0x${"00".repeat(32)}`)],
+      ["firma de 255 bytes", conFirma(`0x${"22".repeat(255)}`)],
+      ["firma de 257 bytes", conFirma(`0x${"22".repeat(257)}`)],
+      ["firma vacía", conFirma("0x")],
+      ["firma cero", conFirma(`0x${"00".repeat(256)}`)]
+    ];
+
+    for (const [nombre, payload] of casos) {
+      await expect(contract.emitirVoto.staticCall(payload, 0), nombre).to.be.revertedWith("Token o firma invalidos");
+    }
+
+    // La credencial canonica, en cambio, se contabiliza.
+    await expect(contract.emitirVoto(valido.payload, 0)).to.emit(contract, "VotoEmitido");
+  });
+
+  it("documenta que una firma no canonica (s + n) no habilita un segundo voto", async function () {
+    const { contract } = await loadFixture(deployFixture);
+    const valido = buildSignedToken(121);
+    await contract.abrirUrna();
+    await contract.emitirVoto(valido.payload, 0);
+
+    // s y s + n son congruentes modulo n: s + n es una codificacion no canonica
+    // de la misma firma, que el precompilado reduciria al mismo mensaje. No sirve
+    // para votar dos veces porque la deduplicacion del contrato opera sobre
+    // keccak256(token) y el token no cambia. El control se aplica ademas antes de
+    // la verificacion RSA, de modo que ni siquiera se llega a gastar gas en ella.
+    const payload = abiCoder.encode(
+      ["bytes", "bytes"],
+      [valido.token, bigintToBytes(valido.signature + rsaKey.n)]
+    );
+    await expect(contract.emitirVoto.staticCall(payload, 1)).to.be.revertedWith("El token ya fue utilizado");
+    expect(await contract.totalVotosEmitidos()).to.equal(1n);
+  });
 });

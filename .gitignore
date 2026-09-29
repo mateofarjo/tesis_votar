@@ -35,3 +35,6 @@ nextjs-new.log
 Thumbs.db
 
 .vercel
+
+# node_modules puede ser un symlink en entornos de desarrollo
+node_modules

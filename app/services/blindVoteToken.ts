@@ -3,8 +3,8 @@ import { ethers } from "ethers";
 import type { VoteTokenResponse } from "./election";
 
 const abiCoder = ethers.AbiCoder.defaultAbiCoder();
-const STORAGE_KEY = "votar.anonymousVoteCredential.v1";
-export const VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v1";
+const STORAGE_KEY = "votar.anonymousVoteCredential.v2";
+export const VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v2";
 
 export type BlindSignaturePublicKeyResponse = {
   E: string;
@@ -82,12 +82,27 @@ export function createVoteToken(): string {
   return `0x${bytesToHex(bytes)}`;
 }
 
-export async function getCredentialMessageHash(token: string): Promise<string> {
+/**
+ * Mensaje sometido a firma ciega: SHA-256(dominio || token || candidatoId).
+ *
+ * El candidato forma parte del mensaje, de modo que la credencial queda
+ * comprometida con la opcion elegida desde el momento en que se emite. Esto
+ * obliga a elegir antes de pedir la credencial, y a cambio impide que quien
+ * retransmite la transaccion altere el voto.
+ */
+export async function getCredentialMessageHash(
+  token: string,
+  candidatoId: number,
+): Promise<string> {
+  if (!Number.isInteger(candidatoId) || candidatoId < 0 || candidatoId > 255) {
+    throw new Error("El identificador de candidato debe ser un entero de un byte");
+  }
   const domain = new TextEncoder().encode(VOTE_CREDENTIAL_DOMAIN);
   const tokenBytes = hexToBytes(token);
-  const input = new Uint8Array(domain.length + tokenBytes.length);
+  const input = new Uint8Array(domain.length + tokenBytes.length + 1);
   input.set(domain);
   input.set(tokenBytes, domain.length);
+  input[domain.length + tokenBytes.length] = candidatoId;
   const digest = await crypto.subtle.digest("SHA-256", input);
   return bytesToHex(new Uint8Array(digest));
 }
@@ -172,11 +187,12 @@ export function createBlindingFactor(modulus: bigint): bigint {
 
 export async function createAnonymousVoteCredential(
   publicKey: BlindSignaturePublicKeyResponse,
+  candidatoId: number,
 ): Promise<PreparedAnonymousVoteCredential> {
   const token = createVoteToken();
   const modulus = BigInt(publicKey.N);
   const exponent = BigInt(publicKey.E);
-  const messageHash = BigInt(`0x${await getCredentialMessageHash(token)}`);
+  const messageHash = BigInt(`0x${await getCredentialMessageHash(token, candidatoId)}`);
   const blindingFactor = createBlindingFactor(modulus);
   const blindedToken =
     (messageHash * modPow(blindingFactor, exponent, modulus)) % modulus;
@@ -198,6 +214,7 @@ export async function createAnonymousVoteCredential(
       const tokenDigestHex = token;
       const signatureHex = decimalToHex(signature, publicKey.modulusLengthBytes);
       const credential = {
+        candidatoId,
         expiresAt: response.expiresAt,
         tokenDigestHex,
         tokenFirmado: abiCoder.encode(

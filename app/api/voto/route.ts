@@ -79,7 +79,11 @@ export async function POST(request: Request) {
   // El gas lo paga el retransmisor y este endpoint no exige autenticacion: una
   // credencial mal formada o con firma invalida se descarta aqui, antes de
   // gastar un centavo en una transaccion que el contrato revertiria.
-  if (!esCredencialValidaFueraDeCadena(decodedToken.tokenDigestHex, decodedToken.signatureHex)) {
+  //
+  // La verificacion incluye el candidato, de modo que este endpoint tampoco
+  // puede alterar la opcion: si lo hiciera, la credencial dejaria de validar
+  // tanto aqui como en el contrato.
+  if (!esCredencialValidaFueraDeCadena(decodedToken.tokenDigestHex, decodedToken.signatureHex, candidatoId)) {
     return NextResponse.json(
       { error: "La credencial no lleva una firma valida de la autoridad electoral" },
       { status: 400 }

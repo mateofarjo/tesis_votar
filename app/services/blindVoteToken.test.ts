@@ -60,26 +60,42 @@ describe("modulo criptografico del cliente", () => {
   describe("separacion de dominio", () => {
     it("coincide con el digesto que calcula el servidor", async () => {
       const token = createVoteToken();
-      const enElCliente = await getCredentialMessageHash(token);
+      const enElCliente = await getCredentialMessageHash(token, 1);
       const enElServidor = createHash("sha256")
         .update(VOTE_CREDENTIAL_DOMAIN, "utf8")
         .update(Buffer.from(token.slice(2), "hex"))
+        .update(Buffer.from([1]))
         .digest("hex");
       expect(enElCliente).toBe(enElServidor);
     });
 
     it("no coincide con SHA-256 del token sin el prefijo de dominio", async () => {
       const token = createVoteToken();
-      const conDominio = await getCredentialMessageHash(token);
+      const conDominio = await getCredentialMessageHash(token, 0);
       const sinDominio = createHash("sha256")
         .update(Buffer.from(token.slice(2), "hex"))
         .digest("hex");
       expect(conDominio).not.toBe(sinDominio);
     });
 
+    it("cambia con el candidato: la credencial queda atada a la opción", async () => {
+      const token = createVoteToken();
+      const digestos = new Set(
+        await Promise.all([0, 1, 2, 3].map((c) => getCredentialMessageHash(token, c)))
+      );
+      expect(digestos.size).toBe(4);
+    });
+
+    it("rechaza identificadores de candidato fuera de un byte", async () => {
+      const token = createVoteToken();
+      for (const malo of [-1, 256, 1.5, Number.NaN]) {
+        await expect(getCredentialMessageHash(token, malo)).rejects.toThrow();
+      }
+    });
+
     it("es determinista para un mismo token", async () => {
       const token = createVoteToken();
-      expect(await getCredentialMessageHash(token)).toBe(await getCredentialMessageHash(token));
+      expect(await getCredentialMessageHash(token, 2)).toBe(await getCredentialMessageHash(token, 2));
     });
   });
 

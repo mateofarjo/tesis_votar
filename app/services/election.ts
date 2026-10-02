@@ -24,6 +24,7 @@ export type ResultadosResponse = {
 };
 
 export type VoteTokenResponse = {
+  candidatoId: number;
   expiresAt: string;
   tokenDigestHex: string;
   tokenFirmado: string;
@@ -48,10 +49,25 @@ export async function getResultados(): Promise<ResultadosResponse> {
   );
 }
 
-export async function createVoteToken(): Promise<VoteTokenResponse> {
+/**
+ * Emite la credencial anonima para un candidato determinado.
+ *
+ * El candidato es ahora un parametro de la emision y no del envio: forma parte
+ * del mensaje que la autoridad firma a ciegas, de modo que la eleccion queda
+ * comprometida en este punto. Una credencial guardada para otra opcion no sirve.
+ */
+export async function createVoteToken(candidatoId: number): Promise<VoteTokenResponse> {
   const storedCredential = getStoredVoteCredential();
-  if (storedCredential) {
+  if (storedCredential && storedCredential.candidatoId === candidatoId) {
     return storedCredential;
+  }
+  if (storedCredential) {
+    // Hay una credencial emitida para otra opcion. No se descarta en silencio:
+    // el servidor no emitira una segunda, de modo que quien cambia de opinion
+    // despues de pedirla queda sin poder votar y debe saberlo.
+    throw new Error(
+      "Ya se emitio una credencial para otra opcion. La eleccion queda fijada al pedir la credencial y el sistema no emite una segunda.",
+    );
   }
 
   const publicKeyResponse = await fetch("/api/generar-token", {
@@ -62,7 +78,7 @@ export async function createVoteToken(): Promise<VoteTokenResponse> {
     "No se pudo obtener la clave publica de voto",
   );
 
-  const preparedCredential = await createAnonymousVoteCredential(publicKey);
+  const preparedCredential = await createAnonymousVoteCredential(publicKey, candidatoId);
   const signResponse = await fetch("/api/generar-token", {
     body: JSON.stringify({
       blindedToken: preparedCredential.blindedToken,

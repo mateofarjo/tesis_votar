@@ -12,7 +12,11 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 contract VotacionContract is Ownable, ReentrancyGuard {
     uint256 private constant RSA_MODULUS_LENGTH_BYTES = 256;
     uint256 private constant VOTE_TOKEN_LENGTH_BYTES = 32;
-    bytes private constant VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v1";
+    // La version 2 del dominio incorpora el candidato al mensaje firmado. En la
+    // version 1 la firma cubria solo el token, de modo que la credencial y la
+    // opcion viajaban juntas pero solo la primera estaba autenticada: quien
+    // retransmitia la transaccion podia cambiar el candidato sin invalidar nada.
+    bytes private constant VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v2";
     enum EstadoUrna {
         CERRADA,
         ABIERTA,
@@ -104,7 +108,10 @@ contract VotacionContract is Ownable, ReentrancyGuard {
         bytes32 tokenHash = keccak256(token);
 
         require(!tokenUsado[tokenHash], "El token ya fue utilizado");
-        require(verificarToken(tokenFirmado), "Token o firma invalidos");
+        // La verificacion incluye el candidato: una credencial legitima presentada
+        // con una opcion distinta de aquella para la que se emitio no supera la
+        // ecuacion RSA.
+        require(verificarToken(tokenFirmado, candidatoId), "Token o firma invalidos");
 
         tokenUsado[tokenHash] = true;
         candidatos[candidatoId].votos += 1;
@@ -136,7 +143,7 @@ contract VotacionContract is Ownable, ReentrancyGuard {
         revert("Operacion deshabilitada");
     }
 
-    function verificarToken(bytes memory tokenFirmado) internal view returns (bool) {
+    function verificarToken(bytes memory tokenFirmado, uint8 candidatoId) internal view returns (bool) {
         (bytes memory token, bytes memory signature) = _decodeTokenFirmado(tokenFirmado);
         (bytes memory modulus, bytes memory exponent) = _decodePublicKey();
 
@@ -151,9 +158,10 @@ contract VotacionContract is Ownable, ReentrancyGuard {
         bytes memory recoveredMessage = _modExp(signature, exponent, modulus);
         // RSA nunca firma el token crudo. La codificacion separada por dominio
         // impide que la propiedad multiplicativa de RSA genere otra credencial
-        // valida a partir de firmas observadas.
+        // valida a partir de firmas observadas, y la inclusion del candidato ata
+        // la credencial a la opcion para la que fue emitida.
         bytes memory normalizedToken = _leftPad(
-            abi.encodePacked(sha256(abi.encodePacked(VOTE_CREDENTIAL_DOMAIN, token))),
+            abi.encodePacked(sha256(abi.encodePacked(VOTE_CREDENTIAL_DOMAIN, token, candidatoId))),
             modulus.length
         );
 

@@ -19,7 +19,7 @@ import {
   getVoteTokenDigestHex
 } from "./blindSignature";
 
-const VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v1";
+const VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v2";
 
 function instalarClaveDePrueba(): { d: bigint; e: bigint; n: bigint } {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", {
@@ -69,36 +69,37 @@ describe("casos limite del modulo criptografico del servidor", () => {
     else delete process.env.RSA_PUBLIC_KEY_PEM;
   });
 
-  const credencialValida = () => {
+  const credencialValida = (candidatoId = 0) => {
     const token = generateVoteToken();
-    const mensaje = BigInt(getVoteTokenDigestHex(token));
-    return { firma: hex(modPow(mensaje, clave.d, clave.n), 256), token };
+    const mensaje = BigInt(getVoteTokenDigestHex(token, candidatoId));
+    return { candidatoId, firma: hex(modPow(mensaje, clave.d, clave.n), 256), token };
   };
 
   describe("digesto separado por dominio", () => {
     it("exige un token hexadecimal canonico de 32 bytes", () => {
-      expect(() => getVoteTokenDigestHex(`0x${"11".repeat(31)}`)).toThrow();
-      expect(() => getVoteTokenDigestHex(`0x${"11".repeat(33)}`)).toThrow();
-      expect(() => getVoteTokenDigestHex("0x")).toThrow();
-      expect(() => getVoteTokenDigestHex("nada")).toThrow();
+      expect(() => getVoteTokenDigestHex(`0x${"11".repeat(31)}`, 0)).toThrow();
+      expect(() => getVoteTokenDigestHex(`0x${"11".repeat(33)}`, 0)).toThrow();
+      expect(() => getVoteTokenDigestHex("0x", 0)).toThrow();
+      expect(() => getVoteTokenDigestHex("nada", 0)).toThrow();
     });
 
     it("incorpora efectivamente el prefijo de dominio", () => {
       const token = generateVoteToken();
       const sinDominio = `0x${createHash("sha256").update(Buffer.from(token.slice(2), "hex")).digest("hex")}`;
-      expect(getVoteTokenDigestHex(token)).not.toBe(sinDominio);
-      expect(getVoteTokenDigestHex(token)).toBe(
+      expect(getVoteTokenDigestHex(token, 0)).not.toBe(sinDominio);
+      expect(getVoteTokenDigestHex(token, 0)).toBe(
         `0x${createHash("sha256")
           .update(VOTE_CREDENTIAL_DOMAIN, "utf8")
           .update(Buffer.from(token.slice(2), "hex"))
+          .update(Buffer.from([0]))
           .digest("hex")}`
       );
     });
 
     it("es insensible a mayusculas en el token", () => {
       const token = generateVoteToken();
-      expect(getVoteTokenDigestHex(token.toUpperCase().replace("0X", "0x"))).toBe(
-        getVoteTokenDigestHex(token)
+      expect(getVoteTokenDigestHex(token.toUpperCase().replace("0X", "0x"), 3)).toBe(
+        getVoteTokenDigestHex(token, 3)
       );
     });
   });
@@ -106,34 +107,34 @@ describe("casos limite del modulo criptografico del servidor", () => {
   describe("verificacion fuera de cadena", () => {
     it("acepta una credencial legitima", () => {
       const { firma, token } = credencialValida();
-      expect(esCredencialValidaFueraDeCadena(token, firma)).toBe(true);
+      expect(esCredencialValidaFueraDeCadena(token, firma, 0)).toBe(true);
     });
 
     it("rechaza una firma valida presentada con otro token", () => {
       const { firma } = credencialValida();
-      expect(esCredencialValidaFueraDeCadena(generateVoteToken(), firma)).toBe(false);
+      expect(esCredencialValidaFueraDeCadena(generateVoteToken(), firma, 0)).toBe(false);
     });
 
     it("rechaza el token y la firma de longitud incorrecta", () => {
       const { firma, token } = credencialValida();
-      expect(esCredencialValidaFueraDeCadena(`0x${"11".repeat(31)}`, firma)).toBe(false);
-      expect(esCredencialValidaFueraDeCadena(`0x${"11".repeat(33)}`, firma)).toBe(false);
-      expect(esCredencialValidaFueraDeCadena(token, `0x${"22".repeat(255)}`)).toBe(false);
-      expect(esCredencialValidaFueraDeCadena(token, `0x${"22".repeat(257)}`)).toBe(false);
+      expect(esCredencialValidaFueraDeCadena(`0x${"11".repeat(31)}`, firma, 0)).toBe(false);
+      expect(esCredencialValidaFueraDeCadena(`0x${"11".repeat(33)}`, firma, 0)).toBe(false);
+      expect(esCredencialValidaFueraDeCadena(token, `0x${"22".repeat(255)}`, 0)).toBe(false);
+      expect(esCredencialValidaFueraDeCadena(token, `0x${"22".repeat(257)}`, 0)).toBe(false);
     });
 
     it("rechaza firma cero y firma fuera del rango del modulo", () => {
       const { firma, token } = credencialValida();
-      expect(esCredencialValidaFueraDeCadena(token, hex(0n, 256))).toBe(false);
-      expect(esCredencialValidaFueraDeCadena(token, hex(clave.n, 256))).toBe(false);
+      expect(esCredencialValidaFueraDeCadena(token, hex(0n, 256), 0)).toBe(false);
+      expect(esCredencialValidaFueraDeCadena(token, hex(clave.n, 256), 0)).toBe(false);
       // s + n es congruente con s, pero se rechaza por estar fuera de [1, n).
-      expect(esCredencialValidaFueraDeCadena(token, hex(BigInt(firma) + clave.n, 256))).toBe(false);
+      expect(esCredencialValidaFueraDeCadena(token, hex(BigInt(firma) + clave.n, 256), 0)).toBe(false);
     });
 
     it("rechaza una falsificacion multiplicativa", () => {
       const { firma, token } = credencialValida();
       const cuadrado = (BigInt(firma) * BigInt(firma)) % clave.n;
-      expect(esCredencialValidaFueraDeCadena(token, hex(cuadrado, 256))).toBe(false);
+      expect(esCredencialValidaFueraDeCadena(token, hex(cuadrado, 256), 0)).toBe(false);
     });
 
     it("rechaza una firma calculada sin separacion de dominio", () => {
@@ -142,13 +143,13 @@ describe("casos limite del modulo criptografico del servidor", () => {
         `0x${createHash("sha256").update(Buffer.from(token.slice(2), "hex")).digest("hex")}`
       );
       expect(
-        esCredencialValidaFueraDeCadena(token, hex(modPow(sinDominio, clave.d, clave.n), 256))
+        esCredencialValidaFueraDeCadena(token, hex(modPow(sinDominio, clave.d, clave.n), 256), 0)
       ).toBe(false);
     });
 
     it("no lanza ante entradas basura", () => {
       for (const basura of ["", "0x", "no-hex", "0xzz", "0"]) {
-        expect(esCredencialValidaFueraDeCadena(basura, basura)).toBe(false);
+        expect(esCredencialValidaFueraDeCadena(basura, basura, 0)).toBe(false);
       }
     });
   });
@@ -174,5 +175,43 @@ describe("casos limite del modulo criptografico del servidor", () => {
       expect(tokens.size).toBe(200);
       for (const t of tokens) expect(t).toMatch(/^0x[0-9a-f]{64}$/);
     });
+  });
+});
+
+describe("el candidato queda ligado a la credencial", () => {
+  const privadaOriginal = process.env.RSA_PRIVATE_KEY_PEM;
+  const publicaOriginal = process.env.RSA_PUBLIC_KEY_PEM;
+  let clave: { d: bigint; e: bigint; n: bigint };
+
+  beforeAll(() => { clave = instalarClaveDePrueba(); });
+  afterAll(() => {
+    if (privadaOriginal) process.env.RSA_PRIVATE_KEY_PEM = privadaOriginal;
+    else delete process.env.RSA_PRIVATE_KEY_PEM;
+    if (publicaOriginal) process.env.RSA_PUBLIC_KEY_PEM = publicaOriginal;
+    else delete process.env.RSA_PUBLIC_KEY_PEM;
+  });
+
+  it("el digesto cambia con el candidato", () => {
+    const token = generateVoteToken();
+    const digestos = new Set([0, 1, 2, 255].map((c) => getVoteTokenDigestHex(token, c)));
+    expect(digestos.size).toBe(4);
+  });
+
+  it("rechaza identificadores de candidato fuera de un byte", () => {
+    const token = generateVoteToken();
+    for (const malo of [-1, 256, 1.5, Number.NaN]) {
+      expect(() => getVoteTokenDigestHex(token, malo)).toThrow();
+    }
+  });
+
+  it("una credencial emitida para una opcion no valida para otra", () => {
+    const token = generateVoteToken();
+    const firma = `0x${modPow(BigInt(getVoteTokenDigestHex(token, 1)), clave.d, clave.n)
+      .toString(16).padStart(512, "0")}`;
+
+    expect(esCredencialValidaFueraDeCadena(token, firma, 1)).toBe(true);
+    for (const otro of [0, 2, 3, 255]) {
+      expect(esCredencialValidaFueraDeCadena(token, firma, otro)).toBe(false);
+    }
   });
 });

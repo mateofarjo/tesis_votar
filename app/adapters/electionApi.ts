@@ -17,6 +17,7 @@ export function adaptResultados(payload: ResultadosResponse): ResultadosResponse
 
 export function adaptVoteToken(payload: VoteTokenResponse): VoteTokenResponse {
   return {
+    candidatoId: payload.candidatoId,
     expiresAt: payload.expiresAt,
     tokenDigestHex: payload.tokenDigestHex,
     tokenFirmado: payload.tokenFirmado,

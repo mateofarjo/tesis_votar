@@ -6,7 +6,7 @@ import { BigInteger } from "jsbn";
 
 const RSA_KEY_SIZE_BITS = 2048;
 const abiCoder = ethers.AbiCoder.defaultAbiCoder();
-const VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v1";
+const VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v2";
 
 type RsaJwk = {
   d?: string;
@@ -279,15 +279,30 @@ export function verifyUnblindedToken(message: string, signature: string): boolea
   }
 }
 
-export function getVoteTokenDigestHex(token: string): string {
+/**
+ * Digesto separado por dominio que constituye el mensaje sometido a firma ciega.
+ *
+ * Incluye el identificador del candidato: de ese modo la credencial queda
+ * comprometida con la opcion en el momento de emitirse, y presentarla mas tarde
+ * con otra opcion invalida la firma. Sin ese compromiso, la credencial y el
+ * candidato viajaban juntos pero solo la primera estaba autenticada, de modo que
+ * quien retransmitia la transaccion —o quien observara el conjunto de
+ * transacciones pendientes, si la funcion admitiera cualquier remitente— podia
+ * alterar el voto sin romper nada.
+ */
+export function getVoteTokenDigestHex(token: string, candidatoId: number): string {
   const normalized = token.trim().toLowerCase();
   if (!/^0x[0-9a-f]{64}$/.test(normalized)) {
     throw new Error("El token de voto debe ser hexadecimal canonico de 32 bytes");
+  }
+  if (!Number.isInteger(candidatoId) || candidatoId < 0 || candidatoId > 255) {
+    throw new Error("El identificador de candidato debe ser un entero de un byte");
   }
 
   return `0x${createHash("sha256")
     .update(VOTE_CREDENTIAL_DOMAIN, "utf8")
     .update(Buffer.from(normalized.slice(2), "hex"))
+    .update(Buffer.from([candidatoId]))
     .digest("hex")}`;
 }
 
@@ -295,16 +310,16 @@ export function generateVoteToken(): string {
   return `0x${randomBytes(32).toString("hex")}`;
 }
 
-function voteTokenMessageDecimal(token: string): string {
-  return BigInt(getVoteTokenDigestHex(token)).toString(10);
+function voteTokenMessageDecimal(token: string, candidatoId: number): string {
+  return BigInt(getVoteTokenDigestHex(token, candidatoId)).toString(10);
 }
 
-export function blindVoteToken(token: string): BlindedVoteToken {
+export function blindVoteToken(token: string, candidatoId: number): BlindedVoteToken {
   const publicKey = getBlindSignaturePublicKey();
   const { blinded, r } = BlindSignature.blind({
     E: publicKey.E,
     N: publicKey.N,
-    message: voteTokenMessageDecimal(token)
+    message: voteTokenMessageDecimal(token, candidatoId)
   });
 
   return {
@@ -324,7 +339,8 @@ export function signBlindedToken(blindedToken: string): string {
 export function unblindSignedToken(
   token: string,
   signedBlindedToken: string,
-  blindingFactor: string
+  blindingFactor: string,
+  candidatoId: number
 ): UnblindedVoteSignature {
   const publicKey = getBlindSignaturePublicKey();
   const unblinded = BlindSignature.unblind({
@@ -334,7 +350,7 @@ export function unblindSignedToken(
   });
 
   const signatureDecimal = asDecimalString(unblinded);
-  if (!verifyUnblindedToken(voteTokenMessageDecimal(token), signatureDecimal)) {
+  if (!verifyUnblindedToken(voteTokenMessageDecimal(token, candidatoId), signatureDecimal)) {
     throw new Error("La firma ciega RSA no pudo validarse localmente");
   }
 
@@ -350,10 +366,13 @@ export function unblindSignedToken(
   };
 }
 
-export function issueBlindSignedVoteToken(token = generateVoteToken()): UnblindedVoteSignature {
-  const blinded = blindVoteToken(token);
+export function issueBlindSignedVoteToken(
+  candidatoId: number,
+  token = generateVoteToken()
+): UnblindedVoteSignature {
+  const blinded = blindVoteToken(token, candidatoId);
   const blindSignature = signBlindToken(blinded.blindedToken);
-  return unblindSignedToken(token, blindSignature, blinded.blindingFactor);
+  return unblindSignedToken(token, blindSignature, blinded.blindingFactor, candidatoId);
 }
 
 export function encodeSignedVoteTokenForContract(
@@ -395,7 +414,8 @@ export function exportAuthorityPublicKeyForContract(): string {
  */
 export function esCredencialValidaFueraDeCadena(
   tokenHex: string,
-  signatureHex: string
+  signatureHex: string,
+  candidatoId: number
 ): boolean {
   const token = tokenHex.trim().toLowerCase();
   const firma = signatureHex.trim().toLowerCase();
@@ -428,7 +448,7 @@ export function esCredencialValidaFueraDeCadena(
       base = (base * base) % n;
     }
 
-    return recuperado === BigInt(getVoteTokenDigestHex(token));
+    return recuperado === BigInt(getVoteTokenDigestHex(token, candidatoId));
   } catch {
     return false;
   }

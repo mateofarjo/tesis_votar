@@ -186,8 +186,9 @@ export default function VotarPage() {
                 }
                 if (payload.status === "APROBADO" && payload.biometricMatch) {
                     clearPendingBiometricVerification();
-                    setNotice("Biometría validada. Generando token de voto...");
-                    await issueVoteToken();
+                    setNotice(
+                        "Biometría validada. Elegí tu opción: la credencial se emite comprometida con ella.",
+                    );
                 }
             } catch (error) {
                 setErrorMessage(
@@ -258,7 +259,7 @@ export default function VotarPage() {
         });
     }
 
-    async function issueVoteToken() {
+    async function issueVoteToken(candidatoId: number) {
         if (!urnaAbierta) {
             setNotice(
                 "Biometría validada. La urna debe estar abierta para emitir el token.",
@@ -266,20 +267,22 @@ export default function VotarPage() {
             return;
         }
 
-        if (voteToken || tokenGenerationLockRef.current) return;
+        if (voteToken?.candidatoId === candidatoId) return voteToken;
+        if (tokenGenerationLockRef.current) return null;
         tokenGenerationLockRef.current = true;
         setIsGeneratingToken(true);
         setErrorMessage(null);
         try {
-            const payload = await createVoteToken();
+            const payload = await createVoteToken(candidatoId);
             setVoteToken(payload);
-            setNotice("Token anónimo emitido. Ya podés seleccionar tu opción.");
+            return payload;
         } catch (error) {
             setErrorMessage(
                 error instanceof Error
                     ? error.message
-                    : "No se pudo generar el token de voto",
+                    : "No se pudo generar la credencial de voto",
             );
+            return null;
         } finally {
             tokenGenerationLockRef.current = false;
             setIsGeneratingToken(false);
@@ -301,8 +304,9 @@ export default function VotarPage() {
                 stopBiometricPolling();
                 closeVerificationFrame();
                 clearPendingBiometricVerification();
-                setNotice("Biometría aprobada. Generando token de voto...");
-                await issueVoteToken();
+                setNotice(
+                    "Biometría aprobada. Elegí tu opción: la credencial se emite comprometida con ella.",
+                );
             }
             if (["RECHAZADO", "EXPIRADO", "ERROR"].includes(payload.status)) {
                 stopBiometricPolling();
@@ -366,13 +370,19 @@ export default function VotarPage() {
     }
 
     async function submitVote() {
-        if (selectedCandidateId === null || !voteToken) return;
+        if (selectedCandidateId === null) return;
         setIsSubmittingVote(true);
         setErrorMessage(null);
         try {
+            // La credencial se emite recien ahora, porque el candidato forma parte
+            // del mensaje que la autoridad firma a ciegas. La autoridad sigue sin
+            // ver la opcion: lo que recibe es el valor cegado.
+            const credencial = await issueVoteToken(selectedCandidateId);
+            if (!credencial) return;
+
             const payload = await submitVoteRequest({
                 candidatoId: selectedCandidateId,
-                tokenFirmado: voteToken.tokenFirmado,
+                tokenFirmado: credencial.tokenFirmado,
             });
             setVoteReceipt(payload);
             setNotice("El voto quedó confirmado en la blockchain.");
@@ -422,7 +432,7 @@ export default function VotarPage() {
 
     /* Step states */
     const step1Done = biometricOk;
-    const step2Active = !!voteToken && !voteReceipt;
+    const step2Active = biometricOk && !voteReceipt;
     const step2Done = !!voteReceipt;
 
     return (
@@ -635,7 +645,7 @@ export default function VotarPage() {
                                     {isGeneratingToken && (
                                         <span className="status-chip animate-pulse-soft">
                                             <span className="spinner-sm" />{" "}
-                                            Generando token...
+                                            Emitiendo credencial...
                                         </span>
                                     )}
                                 </div>
@@ -646,15 +656,16 @@ export default function VotarPage() {
                                             const isSelected =
                                                 selectedCandidateId ===
                                                 candidate.id;
+                                            // La credencial se emite al votar,
+                                            // ligada a esta opcion, de modo que
+                                            // la seleccion solo depende de la
+                                            // biometria y del estado de la urna.
                                             const isDisabled =
-                                                !voteToken ||
+                                                !biometricOk ||
                                                 !urnaAbierta ||
+                                                isGeneratingToken ||
+                                                isSubmittingVote ||
                                                 Boolean(voteReceipt);
-                                            console.log("isDisabled", {
-                                                voteToken,
-                                                urnaAbierta,
-                                                voteReceipt,
-                                            });
                                             return (
                                                 <SpotlightCard
                                                     key={candidate.id}
@@ -722,8 +733,8 @@ export default function VotarPage() {
                                 <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                                     <ShimmerButton
                                         disabled={
-                                            !voteToken ||
                                             selectedCandidateId === null ||
+                                            isGeneratingToken ||
                                             isSubmittingVote ||
                                             !urnaAbierta ||
                                             Boolean(voteReceipt)

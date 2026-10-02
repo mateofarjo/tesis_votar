@@ -6,7 +6,7 @@ import { ethers } from "hardhat";
 import { VotacionContract__factory, type VotacionContract } from "../typechain-types";
 
 const abiCoder = ethers.AbiCoder.defaultAbiCoder();
-const VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v1";
+const VOTE_CREDENTIAL_DOMAIN = "VOT.AR/VOTE-CREDENTIAL/v2";
 type TestRsaKey = { d: bigint; e: bigint; n: bigint };
 
 function base64UrlToBigint(value: string): bigint {
@@ -43,8 +43,12 @@ function modPow(base: bigint, exponent: bigint, modulus: bigint): bigint {
   return result;
 }
 
-function credentialMessage(token: string): bigint {
-  const input = Buffer.concat([Buffer.from(VOTE_CREDENTIAL_DOMAIN), Buffer.from(token.slice(2), "hex")]);
+function credentialMessage(token: string, candidatoId: number): bigint {
+  const input = Buffer.concat([
+    Buffer.from(VOTE_CREDENTIAL_DOMAIN),
+    Buffer.from(token.slice(2), "hex"),
+    Buffer.from([candidatoId])
+  ]);
   return BigInt(`0x${createHash("sha256").update(input).digest("hex")}`);
 }
 
@@ -52,9 +56,9 @@ function encodePublicKey(): string {
   return abiCoder.encode(["bytes", "bytes"], [bigintToBytes(rsaKey.n, 256), bigintToBytes(rsaKey.e)]);
 }
 
-function buildSignedToken(lastByte: number) {
+function buildSignedToken(lastByte: number, candidatoId = 0) {
   const token = `0x${"00".repeat(31)}${lastByte.toString(16).padStart(2, "0")}`;
-  const signature = modPow(credentialMessage(token), rsaKey.d, rsaKey.n);
+  const signature = modPow(credentialMessage(token, candidatoId), rsaKey.d, rsaKey.n);
   const signatureHex = bigintToBytes(signature, 256);
   return {
     token,
@@ -93,7 +97,7 @@ describe("VotacionContract", function () {
 
   it("contabiliza una credencial RSA canónica de 2048 bits", async function () {
     const { contract } = await loadFixture(deployFixture);
-    const signedToken = buildSignedToken(42);
+    const signedToken = buildSignedToken(42, 1);
     await contract.abrirUrna();
     await expect(contract.emitirVoto(signedToken.payload, 1)).to.emit(contract, "VotoEmitido").withArgs(signedToken.tokenHash, 1);
     expect(await contract.totalVotosEmitidos()).to.equal(1n);
@@ -114,7 +118,7 @@ describe("VotacionContract", function () {
   it("rechaza falsificación multiplicativa y formatos no canónicos", async function () {
     const { contract } = await loadFixture(deployFixture);
     const signedToken = buildSignedToken(17);
-    const forgedMessage = modPow(credentialMessage(signedToken.token), 2n, rsaKey.n);
+    const forgedMessage = modPow(credentialMessage(signedToken.token, 0), 2n, rsaKey.n);
     const forgedSignature = (signedToken.signature * signedToken.signature) % rsaKey.n;
     const multiplicativeForgery = abiCoder.encode(
       ["bytes", "bytes"],
@@ -191,7 +195,7 @@ describe("VotacionContract", function () {
     // y la misma credencial, firmada CON el dominio, si es aceptada
     const conDominio = abiCoder.encode(
       ["bytes", "bytes"],
-      [token, bigintToBytes(modPow(credentialMessage(token), rsaKey.d, rsaKey.n), 256)]
+      [token, bigintToBytes(modPow(credentialMessage(token, 0), rsaKey.d, rsaKey.n), 256)]
     );
     await expect(contract.emitirVoto(conDominio, 0)).to.emit(contract, "VotoEmitido");
   });
@@ -245,5 +249,28 @@ describe("VotacionContract", function () {
     );
     await expect(contract.emitirVoto.staticCall(payload, 1)).to.be.revertedWith("El token ya fue utilizado");
     expect(await contract.totalVotosEmitidos()).to.equal(1n);
+  });
+
+  it("una credencial emitida para un candidato no sirve para otro", async function () {
+    const { contract } = await loadFixture(deployFixture);
+    await contract.abrirUrna();
+
+    // Credencial legitima, emitida para la opcion 1.
+    const credencial = buildSignedToken(200, 1);
+
+    // Presentarla con cualquier otra opcion no supera la verificacion: el
+    // contrato recalcula SHA-256(dominio || token || candidatoId) y el digesto
+    // deja de coincidir. Es lo que impide al retransmisor alterar el voto.
+    for (const otro of [0, 2]) {
+      await expect(contract.emitirVoto.staticCall(credencial.payload, otro))
+        .to.be.revertedWith("Token o firma invalidos");
+    }
+
+    // Con su propia opcion, en cambio, se contabiliza.
+    await expect(contract.emitirVoto(credencial.payload, 1))
+      .to.emit(contract, "VotoEmitido").withArgs(credencial.tokenHash, 1);
+    expect((await contract.candidatos(1)).votos).to.equal(1n);
+    expect((await contract.candidatos(0)).votos).to.equal(0n);
+    expect((await contract.candidatos(2)).votos).to.equal(0n);
   });
 });

@@ -77,3 +77,31 @@ anonimato donde no hay concurrencia; reparte la incertidumbre entre quienes
 comparten ventana. En una eleccion real con votantes espaciados, la ventana debe
 dimensionarse para que cada cubeta contenga varias personas, y aun asi los
 extremos de la jornada quedan expuestos.
+
+## Verificacion del ciclo completo sobre el protocolo v2
+
+El protocolo v2 incorpora el candidato al mensaje firmado a ciegas:
+`SHA-256("VOT.AR/VOTE-CREDENTIAL/v2" || token || candidatoId)`. Eleccion de nueve
+votantes con distribucion declarada de antemano (4/3/2), ejecutada de punta a
+punta sobre esa version.
+
+| Comprobacion | Resultado |
+|---|---|
+| Votantes que completaron el ciclo | 9 de 9 |
+| Escrutinio: contadores del contrato | 4 / 3 / 2 |
+| Escrutinio: recalculo desde los eventos `VotoEmitido` | 4 / 3 / 2 |
+| Escrutinio: API publica tras el cierre | 4 / 3 / 2 |
+| `tokenHash` distintos | 9 de 9 eventos, sin reutilizacion |
+| Identificadores en `VOTO_ENVIADO`, `TOKEN_CONSUMIDO`, `VOTO_CONFIRMADO` | 0 votante, 0 credencial, 0 IP, 0 agente |
+| Estado del padron tras votar | los 9 en `VERIFICADO`: el sistema no sabe quien voto |
+| Ataque de correlacion temporal | **0 aciertos de 9** |
+
+En esta ejecucion los nueve sufragios cayeron dentro de una sola cubeta temporal,
+de modo que no hubo votante solitario y el ataque quedo por debajo de la linea
+base de azar (1,0 acierto esperado).
+
+Se verifico ademas el compromiso con el candidato sobre un despliegue real, y no
+solo en pruebas unitarias: emitida una credencial legitima para la Lista B con la
+clave de la autoridad, los intentos de contabilizarla en las otras dos listas
+revierten con `Token o firma invalidos`, mientras que con su propia opcion se
+contabiliza y el contador correspondiente se incrementa.

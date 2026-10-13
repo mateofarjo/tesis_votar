@@ -1,5 +1,7 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
+const { readFileSync } = require('node:fs');
+const path = require('node:path');
 const { Pool } = require('pg');
 
 /**
@@ -96,4 +98,17 @@ function registrar(accion, { txHash = null, bloque = null } = {}) {
   }
 }
 
-module.exports = { getPool, instanteCubeteado, registrar, vaciarBuffer };
+/**
+ * Crea la tabla de auditoria si no existe.
+ *
+ * La migracion es idempotente (CREATE TABLE IF NOT EXISTS), de modo que correrla
+ * en cada arranque es seguro y evita un paso manual al desplegar. Para un
+ * esquema que creciera conviene una herramienta de migraciones; para una sola
+ * tabla, esto es menos fragil que recordar ejecutarla.
+ */
+async function prepararEsquema() {
+  const sql = readFileSync(path.join(__dirname, '..', 'migrations', '001_init.sql'), 'utf8');
+  await getPool().query(sql);
+}
+
+module.exports = { getPool, instanteCubeteado, prepararEsquema, registrar, vaciarBuffer };

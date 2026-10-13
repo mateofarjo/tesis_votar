@@ -7,7 +7,7 @@ const { ethers } = require('ethers');
 const { esCredencialValida } = require('./lib/credencial');
 const { getClavePublicaAutoridad, getDireccionContrato, simularVoto } = require('./lib/cadena');
 const { encolarVoto } = require('./lib/cola');
-const { registrar, vaciarBuffer } = require('./lib/auditoria');
+const { prepararEsquema, registrar, vaciarBuffer } = require('./lib/auditoria');
 
 /**
  * Servicio de sufragio de Vot.Ar.
@@ -151,10 +151,20 @@ const servidor = http.createServer(async (req, res) => {
 });
 
 const PUERTO = Number.parseInt(process.env.RELAY_PORT || '3100', 10);
-servidor.listen(PUERTO, () => {
-  console.log(`[votar-relay] escuchando en ${PUERTO}`);
-  console.log(`[votar-relay] contrato ${getDireccionContrato()}`);
-});
+
+prepararEsquema()
+  .then(() => {
+    servidor.listen(PUERTO, () => {
+      console.log(`[votar-relay] escuchando en ${PUERTO}`);
+      console.log(`[votar-relay] contrato ${getDireccionContrato()}`);
+    });
+  })
+  .catch((error) => {
+    // Sin traza de auditoria el servicio no debe atender: se quedaria sin
+    // registro de los sufragios que retransmite.
+    console.error('[votar-relay] no se pudo preparar la base de datos', error);
+    process.exit(1);
+  });
 
 for (const senal of ['SIGINT', 'SIGTERM']) {
   process.on(senal, async () => {

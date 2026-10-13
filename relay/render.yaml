@@ -1,0 +1,45 @@
+# Blueprint de Render para el servicio de sufragio.
+#
+# Define el servicio y su base de datos propia. Esa base es distinta de la del
+# padron a proposito: la separacion entre ambas es lo que impide que un unico
+# operador empareje la emision de una credencial con la confirmacion de un voto.
+#
+# Para usarlo: en Render, New > Blueprint, apuntar a este repositorio.
+# Render toma rootDir: relay, de modo que el resto del repositorio se ignora.
+services:
+  - type: web
+    name: votar-relay
+    runtime: node
+    rootDir: relay
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /salud
+    envVars:
+      - key: RELAY_DATABASE_URL
+        fromDatabase:
+          name: votar-relay-db
+          property: connectionString
+      # Los tres siguientes se completan a mano en el panel: dependen de la red
+      # y del despliegue del contrato, y uno es una clave privada.
+      - key: RELAY_RPC_URL
+        sync: false
+      - key: RELAY_CONTRACT_ADDRESS
+        sync: false
+      - key: RELAY_PRIVATE_KEY
+        sync: false
+      # Origen de la aplicacion de identidad, para CORS. El navegador llama a
+      # este servicio directamente, de modo que su origen debe estar permitido.
+      - key: RELAY_ALLOWED_ORIGINS
+        sync: false
+      - key: RELAY_TIME_BUCKET_MINUTES
+        value: "15"
+      # Ventana de barajado del lote. En cero, cada voto sale al recibirse: solo
+      # conviene subirla cuando se espera concurrencia real.
+      - key: RELAY_BATCH_WINDOW_MS
+        value: "0"
+
+databases:
+  - name: votar-relay-db
+    databaseName: votar_relay
+    plan: free

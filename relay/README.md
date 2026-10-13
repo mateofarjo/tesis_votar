@@ -48,12 +48,57 @@ omision.
    reproduzca el orden de llegada. Solo aporta con concurrencia.
 4. Traza de auditoria con marca temporal cubeteada y escritura en lote barajado.
 
-## Puesta en marcha
+## Puesta en marcha local
 
     cp .env.example .env     # completar
     npm install
-    npm run migrate          # crea relay_audit_logs en su base propia
     npm start
+
+El esquema de auditoria se crea solo al arrancar: la migracion es idempotente
+(`CREATE TABLE IF NOT EXISTS`), de modo que no hay un paso manual que recordar.
+
+## Despliegue
+
+El servicio necesita un **proceso persistente**, no funciones sin servidor: la
+cola de retransmision y el buffer de auditoria viven en memoria entre peticiones.
+Cualquier proveedor que corra un contenedor sirve.
+
+### Render (hay blueprint)
+
+`render.yaml` define el servicio y su base de datos. En Render: **New >
+Blueprint**, apuntar a este repositorio. Render toma `rootDir: relay` e ignora el
+resto.
+
+Quedan cuatro variables por completar en el panel, porque dependen del despliegue
+y una es secreta:
+
+| Variable | Que es |
+|---|---|
+| `RELAY_RPC_URL` | Nodo de la red donde vive el contrato |
+| `RELAY_CONTRACT_ADDRESS` | Direccion del contrato desplegado |
+| `RELAY_PRIVATE_KEY` | Clave de la billetera que paga el gas. **No** es la clave RSA de la autoridad: este servicio no puede emitir credenciales |
+| `RELAY_ALLOWED_ORIGINS` | Origen de la aplicacion de identidad, para CORS |
+
+`RELAY_DATABASE_URL` la completa Render desde la base del blueprint.
+
+### Cualquier otro proveedor
+
+Hay `Dockerfile`. Construye una imagen que corre como usuario sin privilegios y
+expone el puerto 3100.
+
+    docker build -t votar-relay .
+    docker run --env-file .env -p 3100:3100 votar-relay
+
+### Despues de desplegar
+
+En el proyecto de la aplicacion de identidad, definir `NEXT_PUBLIC_RELAY_URL` con
+la URL publica de este servicio y volver a desplegar. Sin esa variable, la cabina
+muestra un aviso y no permite votar: es deliberado, porque un respaldo que
+enrutara el voto por la aplicacion reintroduciria la correlacion que esta
+separacion elimina.
+
+La billetera de `RELAY_PRIVATE_KEY` debe tener fondos suficientes para el gas de
+todos los sufragios previstos.
 
 ## Pendiente
 

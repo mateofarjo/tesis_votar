@@ -97,6 +97,24 @@ export async function createVoteToken(candidatoId: number): Promise<VoteTokenRes
   );
 }
 
+/**
+ * URL del servicio de sufragio.
+ *
+ * Es un servicio aparte, desplegado por separado, y el navegador lo alcanza
+ * directamente. Deliberadamente no se enruta a traves de este servidor: si lo
+ * hiciera, el servidor de identidad volveria a ver las dos puntas —quien pidio la
+ * credencial y cuando se emitio el voto— y la separacion no significaria nada.
+ */
+function getRelayUrl(): string {
+  const url = (process.env.NEXT_PUBLIC_RELAY_URL ?? "").trim();
+  if (!url) {
+    throw new Error(
+      "Falta NEXT_PUBLIC_RELAY_URL: el servicio de sufragio se despliega por separado y la aplicacion necesita su direccion.",
+    );
+  }
+  return url.replace(/\/$/, "");
+}
+
 export async function submitVote({
   candidatoId,
   tokenFirmado,
@@ -104,11 +122,14 @@ export async function submitVote({
   candidatoId: number;
   tokenFirmado: string;
 }): Promise<VoteReceipt> {
-  const response = await fetch("/api/voto", {
+  const response = await fetch(`${getRelayUrl()}/voto`, {
     body: JSON.stringify({
       candidatoId,
       tokenFirmado,
     }),
+    // Sin credenciales: el navegador no debe adjuntar la cookie de sesion a esta
+    // peticion ni por omision, porque reintroduciria la identidad del votante.
+    credentials: "omit",
     headers: { "Content-Type": "application/json" },
     method: "POST",
   });

@@ -1,0 +1,16 @@
+{
+  "name": "votar-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servicio de sufragio de Vot.Ar. Se despliega por separado del servicio de identidad: esa separacion es el control, no una convencion.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "migrate": "psql \"$RELAY_DATABASE_URL\" -f migrations/001_init.sql"
+  },
+  "dependencies": {
+    "dotenv": "^17.0.0",
+    "ethers": "^6.0.0",
+    "pg": "^8.0.0"
+  }
+}

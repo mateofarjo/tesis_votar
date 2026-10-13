@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "prisma generate && next build",
-    "db:deploy": "prisma migrate deploy",
+    "db:deploy": "node scripts/verificar-database-url.js && prisma migrate deploy",
     "clean": "hardhat clean",
     "compile": "hardhat compile",
     "dev": "next dev",

@@ -105,11 +105,22 @@ export async function createVoteToken(candidatoId: number): Promise<VoteTokenRes
  * hiciera, el servidor de identidad volveria a ver las dos puntas —quien pidio la
  * credencial y cuando se emitio el voto— y la separacion no significaria nada.
  */
+export function hayServicioDeSufragio(): boolean {
+  return (process.env.NEXT_PUBLIC_RELAY_URL ?? "").trim().length > 0;
+}
+
 function getRelayUrl(): string {
   const url = (process.env.NEXT_PUBLIC_RELAY_URL ?? "").trim();
   if (!url) {
+    // Deliberadamente no hay un respaldo que enrute el voto por este servidor.
+    // Seria comodo y dejaria la aplicacion funcionando, pero reintroduciria en
+    // silencio exactamente la correlacion que la separacion elimina: un mismo
+    // operador volveria a ver quien pidio una credencial y cuando se emitio un
+    // voto. Un despliegue sin servicio de sufragio no puede recibir votos, y
+    // conviene que eso se note.
     throw new Error(
-      "Falta NEXT_PUBLIC_RELAY_URL: el servicio de sufragio se despliega por separado y la aplicacion necesita su direccion.",
+      "El servicio de sufragio no esta configurado en este despliegue. " +
+        "Se despliega por separado de esta aplicacion y su direccion se indica en NEXT_PUBLIC_RELAY_URL.",
     );
   }
   return url.replace(/\/$/, "");

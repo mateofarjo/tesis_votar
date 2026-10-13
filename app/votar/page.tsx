@@ -29,6 +29,7 @@ import {
 import {
     createVoteToken,
     getResultados,
+    hayServicioDeSufragio,
     submitVote as submitVoteRequest,
     type ResultadosResponse,
     type VoteReceipt,
@@ -420,6 +421,9 @@ export default function VotarPage() {
     const livenessDisabledReason = voteReceipt
         ? "El voto ya fue confirmado."
         : null;
+    // Un despliegue sin servicio de sufragio puede mostrarlo todo menos recibir
+    // votos. Conviene decirlo antes de que la persona complete el tramite.
+    const sufragioConfigurado = hayServicioDeSufragio();
     const biometricOk =
         biometricAttempt?.status === "APROBADO" &&
         biometricAttempt.biometricMatch;
@@ -650,6 +654,17 @@ export default function VotarPage() {
                                     )}
                                 </div>
 
+                                {!sufragioConfigurado && (
+                                    <div className="alert-error mt-4">
+                                        <AlertCircle size={15} className="mt-0.5 flex-shrink-0" />
+                                        <span>
+                                            Este despliegue no tiene configurado el servicio de
+                                            sufragio, que corre por separado de esta aplicación. Se
+                                            puede recorrer el flujo, pero no emitir el voto.
+                                        </span>
+                                    </div>
+                                )}
+
                                 <div className="mt-5 grid gap-3">
                                     {(resultados?.candidatos ?? []).map(
                                         (candidate) => {
@@ -662,6 +677,7 @@ export default function VotarPage() {
                                             // biometria y del estado de la urna.
                                             const isDisabled =
                                                 !biometricOk ||
+                                                !sufragioConfigurado ||
                                                 !urnaAbierta ||
                                                 isGeneratingToken ||
                                                 isSubmittingVote ||

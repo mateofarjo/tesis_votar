@@ -38,3 +38,9 @@ Thumbs.db
 
 # node_modules puede ser un symlink en entornos de desarrollo
 node_modules
+
+# Artefactos de despliegue del nodo local: cambian en cada redespliegue de
+# desarrollo y no describen ningun despliegue real. Los de sepolia si se
+# versionan, porque documentan el despliegue que la tesis reporta.
+deployments/localhost.*
+deployments/hardhat.*
